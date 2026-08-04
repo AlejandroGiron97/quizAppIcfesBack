@@ -1,5 +1,7 @@
 using System.Text;
 using IcfesApp.Application.Common.Interfaces;
+using IcfesApp.Domain.Constants;
+using IcfesApp.Infrastructure.Email;
 using IcfesApp.Infrastructure.Identity;
 using IcfesApp.Infrastructure.Persistence;
 using IcfesApp.Infrastructure.Security;
@@ -41,6 +43,7 @@ public static class DependencyInjection
             ?? throw new InvalidOperationException("No se encontró la sección de configuración 'Jwt'.");
 
         services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
+        services.Configure<EmailSettings>(configuration.GetSection("Email"));
 
         services.AddAuthentication(options =>
             {
@@ -62,9 +65,15 @@ public static class DependencyInjection
                 };
             });
 
-        services.AddAuthorization();
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy(Policies.RequireAdmin, policy => policy.RequireRole(Roles.Admin));
+            options.AddPolicy(Policies.RequireTeacher, policy => policy.RequireRole(Roles.Admin, Roles.Teacher));
+            options.AddPolicy(Policies.RequireStudent, policy => policy.RequireRole(Roles.Admin, Roles.Teacher, Roles.Student));
+        });
 
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<IEmailSender, SmtpEmailSender>();
         services.AddScoped<IAuthService, AuthService>();
 
         return services;
