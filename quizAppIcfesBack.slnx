@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IcfesApp.API/IcfesApp.API.csproj" />
+    <Project Path="src/IcfesApp.Application/IcfesApp.Application.csproj" />
+    <Project Path="src/IcfesApp.Domain/IcfesApp.Domain.csproj" />
+    <Project Path="src/IcfesApp.Infrastructure/IcfesApp.Infrastructure.csproj" />
+  </Folder>
+</Solution>

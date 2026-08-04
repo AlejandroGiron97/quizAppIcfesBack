@@ -1,0 +1,6 @@
+@quizAppIcfesBack_HostAddress = http://localhost:5002
+
+GET {{quizAppIcfesBack_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
