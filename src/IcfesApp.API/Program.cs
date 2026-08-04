@@ -1,5 +1,4 @@
 using IcfesApp.Infrastructure;
-using IcfesApp.Infrastructure.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,6 +40,5 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapGroup("/api/auth").MapIdentityApi<ApplicationUser>();
 
 app.Run();

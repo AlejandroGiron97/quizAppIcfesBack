@@ -17,6 +17,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<PracticeSession> PracticeSessions => Set<PracticeSession>();
     public DbSet<StudentAnswer> StudentAnswers => Set<StudentAnswer>();
 
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
