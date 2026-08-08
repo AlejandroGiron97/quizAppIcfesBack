@@ -78,6 +78,8 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ISubjectService, SubjectService>();
         services.AddScoped<IQuestionService, QuestionService>();
+        services.AddScoped<ISchoolService, SchoolService>();
+        services.AddScoped<IPracticeSessionService, PracticeSessionService>();
 
         return services;
     }
