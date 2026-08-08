@@ -77,13 +77,56 @@ public class AuthController(IAuthService authService) : ControllerBase
             : BadRequest(new { errors = result.Errors });
     }
 
-    private static object ToResponse(AuthResult result) => new
+    [HttpGet("2fa/setup")]
+    [Authorize]
+    public async Task<IActionResult> GetTwoFactorSetup(CancellationToken cancellationToken)
     {
-        tokenType = "Bearer",
-        accessToken = result.AccessToken,
-        expiresAtUtc = result.AccessTokenExpiresAtUtc,
-        refreshToken = result.RefreshToken,
-        refreshTokenExpiresAtUtc = result.RefreshTokenExpiresAtUtc,
-        roles = result.Roles
-    };
+        var setup = await authService.GetTwoFactorSetupAsync(CurrentUserId, cancellationToken);
+        return setup is null ? NotFound() : Ok(setup);
+    }
+
+    [HttpPost("2fa/enable")]
+    [Authorize]
+    public async Task<IActionResult> EnableTwoFactor(EnableTwoFactorRequest request, CancellationToken cancellationToken)
+    {
+        var result = await authService.EnableTwoFactorAsync(CurrentUserId, request.Code, cancellationToken);
+        return result.Succeeded
+            ? Ok(new { recoveryCodes = result.Value })
+            : BadRequest(new { errors = result.Errors });
+    }
+
+    [HttpPost("2fa/disable")]
+    [Authorize]
+    public async Task<IActionResult> DisableTwoFactor(DisableTwoFactorRequest request, CancellationToken cancellationToken)
+    {
+        var result = await authService.DisableTwoFactorAsync(CurrentUserId, request.Code, cancellationToken);
+        return result.Succeeded ? NoContent() : BadRequest(new { errors = result.Errors });
+    }
+
+    [HttpPost("2fa/verify")]
+    public async Task<IActionResult> VerifyTwoFactor(TwoFactorLoginRequest request, CancellationToken cancellationToken)
+    {
+        var result = await authService.VerifyTwoFactorAsync(request.TwoFactorToken, request.Code, cancellationToken);
+        return result.Succeeded ? Ok(ToResponse(result)) : Unauthorized(new { errors = result.Errors });
+    }
+
+    private Guid CurrentUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    private static object ToResponse(AuthResult result)
+    {
+        if (result.RequiresTwoFactor)
+        {
+            return new { requiresTwoFactor = true, twoFactorToken = result.TwoFactorToken };
+        }
+
+        return new
+        {
+            tokenType = "Bearer",
+            accessToken = result.AccessToken,
+            expiresAtUtc = result.AccessTokenExpiresAtUtc,
+            refreshToken = result.RefreshToken,
+            refreshTokenExpiresAtUtc = result.RefreshTokenExpiresAtUtc,
+            roles = result.Roles
+        };
+    }
 }

@@ -3,6 +3,8 @@ namespace IcfesApp.Application.Auth;
 public class AuthResult
 {
     public bool Succeeded { get; private init; }
+    public bool RequiresTwoFactor { get; private init; }
+    public string? TwoFactorToken { get; private init; }
     public string? AccessToken { get; private init; }
     public DateTime? AccessTokenExpiresAtUtc { get; private init; }
     public string? RefreshToken { get; private init; }
@@ -23,6 +25,13 @@ public class AuthResult
         RefreshToken = refreshToken,
         RefreshTokenExpiresAtUtc = refreshTokenExpiresAtUtc,
         Roles = roles.ToList()
+    };
+
+    public static AuthResult TwoFactorRequired(string twoFactorToken) => new()
+    {
+        Succeeded = true,
+        RequiresTwoFactor = true,
+        TwoFactorToken = twoFactorToken
     };
 
     public static AuthResult Failed(IEnumerable<string> errors) => new()
