@@ -1,6 +1,7 @@
 using System.Text;
 using IcfesApp.Application.Common.Interfaces;
 using IcfesApp.Domain.Constants;
+using IcfesApp.Infrastructure.Content;
 using IcfesApp.Infrastructure.Email;
 using IcfesApp.Infrastructure.Identity;
 using IcfesApp.Infrastructure.Persistence;
@@ -75,6 +76,8 @@ public static class DependencyInjection
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<ISubjectService, SubjectService>();
+        services.AddScoped<IQuestionService, QuestionService>();
 
         return services;
     }
