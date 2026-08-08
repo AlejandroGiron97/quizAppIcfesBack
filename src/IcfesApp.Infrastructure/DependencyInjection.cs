@@ -45,6 +45,7 @@ public static class DependencyInjection
 
         services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
         services.Configure<EmailSettings>(configuration.GetSection("Email"));
+        services.Configure<GoogleSettings>(configuration.GetSection("Authentication:Google"));
 
         services.AddAuthentication(options =>
             {

@@ -17,4 +17,7 @@ public interface IAuthService
     Task<Result<IReadOnlyList<string>>> EnableTwoFactorAsync(Guid userId, string code, CancellationToken cancellationToken = default);
     Task<OperationResult> DisableTwoFactorAsync(Guid userId, string code, CancellationToken cancellationToken = default);
     Task<AuthResult> VerifyTwoFactorAsync(string twoFactorToken, string code, CancellationToken cancellationToken = default);
+    Task<OperationResult> ConfirmEmailAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default);
+    Task ResendConfirmationEmailAsync(ResendConfirmationRequest request, CancellationToken cancellationToken = default);
+    Task<AuthResult> GoogleLoginAsync(string idToken, CancellationToken cancellationToken = default);
 }

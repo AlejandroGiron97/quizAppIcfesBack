@@ -77,6 +77,29 @@ public class AuthController(IAuthService authService) : ControllerBase
             : BadRequest(new { errors = result.Errors });
     }
 
+    [HttpPost("google")]
+    public async Task<IActionResult> GoogleLogin(GoogleLoginRequest request, CancellationToken cancellationToken)
+    {
+        var result = await authService.GoogleLoginAsync(request.IdToken, cancellationToken);
+        return result.Succeeded ? Ok(ToResponse(result)) : Unauthorized(new { errors = result.Errors });
+    }
+
+    [HttpPost("confirm-email")]
+    public async Task<IActionResult> ConfirmEmail(ConfirmEmailRequest request, CancellationToken cancellationToken)
+    {
+        var result = await authService.ConfirmEmailAsync(request, cancellationToken);
+        return result.Succeeded
+            ? Ok(new { message = "Correo confirmado correctamente. Ya puedes iniciar sesión." })
+            : BadRequest(new { errors = result.Errors });
+    }
+
+    [HttpPost("resend-confirmation")]
+    public async Task<IActionResult> ResendConfirmation(ResendConfirmationRequest request, CancellationToken cancellationToken)
+    {
+        await authService.ResendConfirmationEmailAsync(request, cancellationToken);
+        return Ok(new { message = "Si el correo existe y no ha sido confirmado, se enviará un nuevo enlace." });
+    }
+
     [HttpGet("2fa/setup")]
     [Authorize]
     public async Task<IActionResult> GetTwoFactorSetup(CancellationToken cancellationToken)
@@ -114,6 +137,11 @@ public class AuthController(IAuthService authService) : ControllerBase
 
     private static object ToResponse(AuthResult result)
     {
+        if (result.RequiresEmailConfirmation)
+        {
+            return new { requiresEmailConfirmation = true, message = "Revisa tu correo para confirmar tu cuenta antes de iniciar sesión." };
+        }
+
         if (result.RequiresTwoFactor)
         {
             return new { requiresTwoFactor = true, twoFactorToken = result.TwoFactorToken };

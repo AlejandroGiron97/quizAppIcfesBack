@@ -1,4 +1,5 @@
 using System.Net;
+using Google.Apis.Auth;
 using IcfesApp.Application.Auth;
 using IcfesApp.Application.Auth.Dtos;
 using IcfesApp.Application.Common.Interfaces;
@@ -20,7 +21,8 @@ public class AuthService(
     IEmailSender emailSender,
     ApplicationDbContext dbContext,
     IOptions<JwtSettings> jwtOptions,
-    IOptions<EmailSettings> emailOptions) : IAuthService
+    IOptions<EmailSettings> emailOptions,
+    IOptions<GoogleSettings> googleOptions) : IAuthService
 {
     public async Task<AuthResult> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
@@ -39,7 +41,9 @@ public class AuthService(
         }
 
         await userManager.AddToRoleAsync(user, Roles.Student);
-        return await IssueTokensAsync(user, cancellationToken);
+        await SendConfirmationEmailAsync(user, cancellationToken);
+
+        return AuthResult.RegistrationPending();
     }
 
     public async Task<AuthResult> RegisterStaffAsync(RegisterStaffRequest request, CancellationToken cancellationToken = default)
@@ -54,7 +58,9 @@ public class AuthService(
             UserName = request.Email,
             Email = request.Email,
             FirstName = request.FirstName,
-            LastName = request.LastName
+            LastName = request.LastName,
+            // Provisionado por un Admin: ya se vouch por la cuenta, no necesita confirmar el correo.
+            EmailConfirmed = true
         };
 
         var result = await userManager.CreateAsync(user, request.Password);
@@ -81,6 +87,64 @@ public class AuthService(
             return AuthResult.Failed(signInResult.IsLockedOut
                 ? ["Cuenta bloqueada temporalmente por múltiples intentos fallidos."]
                 : ["Credenciales inválidas."]);
+        }
+
+        if (!await userManager.IsEmailConfirmedAsync(user))
+        {
+            return AuthResult.Failed(["Debes confirmar tu correo antes de iniciar sesión. Revisa tu bandeja de entrada."]);
+        }
+
+        if (await userManager.GetTwoFactorEnabledAsync(user))
+        {
+            var challengeToken = jwtTokenService.CreateTwoFactorChallengeToken(user.Id);
+            return AuthResult.TwoFactorRequired(challengeToken);
+        }
+
+        return await IssueTokensAsync(user, cancellationToken);
+    }
+
+    public async Task<AuthResult> GoogleLoginAsync(string idToken, CancellationToken cancellationToken = default)
+    {
+        GoogleJsonWebSignature.Payload payload;
+        try
+        {
+            payload = await GoogleJsonWebSignature.ValidateAsync(idToken, new GoogleJsonWebSignature.ValidationSettings
+            {
+                Audience = [googleOptions.Value.ClientId]
+            });
+        }
+        catch (InvalidJwtException)
+        {
+            return AuthResult.Failed(["Token de Google inválido."]);
+        }
+
+        if (!payload.EmailVerified)
+        {
+            return AuthResult.Failed(["El correo de la cuenta de Google no está verificado."]);
+        }
+
+        var user = await userManager.FindByEmailAsync(payload.Email);
+        if (user is null)
+        {
+            user = new ApplicationUser
+            {
+                UserName = payload.Email,
+                Email = payload.Email,
+                FirstName = string.IsNullOrWhiteSpace(payload.GivenName) ? payload.Email : payload.GivenName,
+                LastName = payload.FamilyName ?? string.Empty,
+                // Google ya verificó el correo, no hace falta que confirme de nuevo.
+                EmailConfirmed = true
+            };
+
+            // Sin password: esta cuenta solo puede entrar por Google, a menos que más adelante
+            // se agregue una forma de establecer contraseña.
+            var createResult = await userManager.CreateAsync(user);
+            if (!createResult.Succeeded)
+            {
+                return AuthResult.Failed(createResult.Errors.Select(e => e.Description));
+            }
+
+            await userManager.AddToRoleAsync(user, Roles.Student);
         }
 
         if (await userManager.GetTwoFactorEnabledAsync(user))
@@ -248,6 +312,47 @@ public class AuthService(
         }
 
         return await IssueTokensAsync(user, cancellationToken);
+    }
+
+    public async Task<OperationResult> ConfirmEmailAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default)
+    {
+        var user = await userManager.FindByEmailAsync(request.Email);
+        if (user is null)
+        {
+            return OperationResult.Failed(["Token o usuario inválido."]);
+        }
+
+        var result = await userManager.ConfirmEmailAsync(user, request.Token);
+        return result.Succeeded
+            ? OperationResult.Success()
+            : OperationResult.Failed(result.Errors.Select(e => e.Description));
+    }
+
+    public async Task ResendConfirmationEmailAsync(ResendConfirmationRequest request, CancellationToken cancellationToken = default)
+    {
+        var user = await userManager.FindByEmailAsync(request.Email);
+        if (user is null || await userManager.IsEmailConfirmedAsync(user))
+        {
+            // No revelamos si el email existe, ni si ya estaba confirmado.
+            return;
+        }
+
+        await SendConfirmationEmailAsync(user, cancellationToken);
+    }
+
+    private async Task SendConfirmationEmailAsync(ApplicationUser user, CancellationToken cancellationToken)
+    {
+        var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
+        var confirmLink = $"{emailOptions.Value.ConfirmEmailUrlTemplate}?email={WebUtility.UrlEncode(user.Email)}&token={WebUtility.UrlEncode(token)}";
+
+        var body = $"""
+            <p>Hola {WebUtility.HtmlEncode(user.FirstName)},</p>
+            <p>Gracias por registrarte en IcfesApp. Confirma tu correo para activar tu cuenta:</p>
+            <p><a href="{confirmLink}">Confirmar mi correo</a></p>
+            <p>Si no fuiste tú quien se registró, puedes ignorar este correo.</p>
+            """;
+
+        await emailSender.SendAsync(user.Email!, "Confirma tu correo - IcfesApp", body, cancellationToken);
     }
 
     private static string FormatKey(string unformattedKey)

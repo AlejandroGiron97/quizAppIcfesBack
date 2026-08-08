@@ -3,6 +3,7 @@ namespace IcfesApp.Application.Auth;
 public class AuthResult
 {
     public bool Succeeded { get; private init; }
+    public bool RequiresEmailConfirmation { get; private init; }
     public bool RequiresTwoFactor { get; private init; }
     public string? TwoFactorToken { get; private init; }
     public string? AccessToken { get; private init; }
@@ -25,6 +26,12 @@ public class AuthResult
         RefreshToken = refreshToken,
         RefreshTokenExpiresAtUtc = refreshTokenExpiresAtUtc,
         Roles = roles.ToList()
+    };
+
+    public static AuthResult RegistrationPending() => new()
+    {
+        Succeeded = true,
+        RequiresEmailConfirmation = true
     };
 
     public static AuthResult TwoFactorRequired(string twoFactorToken) => new()

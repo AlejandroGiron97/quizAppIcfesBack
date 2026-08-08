@@ -11,4 +11,7 @@ public class EmailSettings
 
     /// <summary>URL de la pantalla del front donde el usuario define su nueva contraseña.</summary>
     public string ResetPasswordUrlTemplate { get; set; } = "http://localhost:4200/reset-password";
+
+    /// <summary>URL de la pantalla del front que confirma el email (lee ?email=&token= y llama a /api/auth/confirm-email).</summary>
+    public string ConfirmEmailUrlTemplate { get; set; } = "http://localhost:4200/confirm-email";
 }
