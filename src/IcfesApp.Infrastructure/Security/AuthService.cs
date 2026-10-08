@@ -10,6 +10,7 @@ using IcfesApp.Infrastructure.Identity;
 using IcfesApp.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace IcfesApp.Infrastructure.Security;
@@ -22,7 +23,8 @@ public class AuthService(
     ApplicationDbContext dbContext,
     IOptions<JwtSettings> jwtOptions,
     IOptions<EmailSettings> emailOptions,
-    IOptions<GoogleSettings> googleOptions) : IAuthService
+    IOptions<GoogleSettings> googleOptions,
+    ILogger<AuthService> logger) : IAuthService
 {
     public async Task<AuthResult> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
@@ -59,7 +61,6 @@ public class AuthService(
             Email = request.Email,
             FirstName = request.FirstName,
             LastName = request.LastName,
-            // Provisionado por un Admin: ya se vouch por la cuenta, no necesita confirmar el correo.
             EmailConfirmed = true
         };
 
@@ -70,7 +71,7 @@ public class AuthService(
         }
 
         await userManager.AddToRoleAsync(user, request.Role);
-        return await IssueTokensAsync(user, cancellationToken);
+        return await IssueTokensAsync(user, cancellationToken, includeUser: true);
     }
 
     public async Task<AuthResult> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
@@ -100,7 +101,7 @@ public class AuthService(
             return AuthResult.TwoFactorRequired(challengeToken);
         }
 
-        return await IssueTokensAsync(user, cancellationToken);
+        return await IssueTokensAsync(user, cancellationToken, includeUser: true);
     }
 
     public async Task<AuthResult> GoogleLoginAsync(string idToken, CancellationToken cancellationToken = default)
@@ -132,12 +133,9 @@ public class AuthService(
                 Email = payload.Email,
                 FirstName = string.IsNullOrWhiteSpace(payload.GivenName) ? payload.Email : payload.GivenName,
                 LastName = payload.FamilyName ?? string.Empty,
-                // Google ya verificó el correo, no hace falta que confirme de nuevo.
                 EmailConfirmed = true
             };
 
-            // Sin password: esta cuenta solo puede entrar por Google, a menos que más adelante
-            // se agregue una forma de establecer contraseña.
             var createResult = await userManager.CreateAsync(user);
             if (!createResult.Succeeded)
             {
@@ -153,7 +151,7 @@ public class AuthService(
             return AuthResult.TwoFactorRequired(challengeToken);
         }
 
-        return await IssueTokensAsync(user, cancellationToken);
+        return await IssueTokensAsync(user, cancellationToken, includeUser: true);
     }
 
     public async Task<AuthResult> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)
@@ -173,7 +171,7 @@ public class AuthService(
         }
 
         stored.RevokedAtUtc = DateTime.UtcNow;
-        return await IssueTokensAsync(user, cancellationToken);
+        return await IssueTokensAsync(user, cancellationToken, includeUser: false);
     }
 
     public async Task RevokeRefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default)
@@ -193,7 +191,6 @@ public class AuthService(
         var user = await userManager.FindByEmailAsync(request.Email);
         if (user is null)
         {
-            // No revelamos si el email existe o no: simplemente no se envía nada.
             return;
         }
 
@@ -207,7 +204,16 @@ public class AuthService(
             <p>Si no fuiste tú quien lo solicitó, puedes ignorar este correo.</p>
             """;
 
-        await emailSender.SendAsync(request.Email, "Recupera tu contraseña - IcfesApp", body, cancellationToken);
+        try
+        {
+            await emailSender.SendAsync(request.Email, "Recupera tu contraseña - IcfesApp", body, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Falló el envío del correo de recuperación para {Email}. El usuario puede solicitar un nuevo enlace.",
+                request.Email);
+        }
     }
 
     public async Task<OperationResult> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
@@ -219,9 +225,60 @@ public class AuthService(
         }
 
         var result = await userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
-        return result.Succeeded
-            ? OperationResult.Success()
-            : OperationResult.Failed(result.Errors.Select(e => e.Description));
+        if (!result.Succeeded)
+        {
+            return OperationResult.Failed(result.Errors.Select(e => e.Description));
+        }
+
+        // Seguridad: al resetear la contraseña, revocamos todos los refresh tokens activos.
+        // Si el motivo del reset fue "cuenta comprometida", esto expulsa a cualquier sesión ajena.
+        await RevokeAllRefreshTokensAsync(user.Id, cancellationToken);
+
+        return OperationResult.Success();
+    }
+
+    public async Task<OperationResult> ChangePasswordAsync(
+        Guid userId,
+        ChangePasswordRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+        {
+            return OperationResult.Failed(["Usuario no encontrado."]);
+        }
+
+        // Validación 1: la contraseña actual debe ser correcta.
+        // Sin esto, cualquiera con un access token robado podría cambiar la contraseña.
+        var isCurrentPasswordValid = await userManager.CheckPasswordAsync(user, request.CurrentPassword);
+        if (!isCurrentPasswordValid)
+        {
+            return OperationResult.Failed(["La contraseña actual es incorrecta."]);
+        }
+
+        // Validación 2: la nueva contraseña debe ser diferente a la actual.
+        var isSamePassword = await userManager.CheckPasswordAsync(user, request.NewPassword);
+        if (isSamePassword)
+        {
+            return OperationResult.Failed(["La nueva contraseña debe ser diferente a la actual."]);
+        }
+
+        // Identity valida la política de contraseña automáticamente.
+        var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
+        if (!result.Succeeded)
+        {
+            return OperationResult.Failed(result.Errors.Select(e => e.Description));
+        }
+
+        // Seguridad: revocar todos los refresh tokens activos.
+        // Si alguien más tenía sesión con la contraseña vieja, debe re-loguearse.
+        var revokedCount = await RevokeAllRefreshTokensAsync(user.Id, cancellationToken);
+
+        logger.LogInformation(
+            "Usuario {UserId} cambió su contraseña. {RevokedCount} refresh tokens revocados por seguridad.",
+            user.Id, revokedCount);
+
+        return OperationResult.Success();
     }
 
     public async Task<TwoFactorSetupDto?> GetTwoFactorSetupAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -281,7 +338,6 @@ public class AuthService(
         }
 
         await userManager.SetTwoFactorEnabledAsync(user, false);
-        // Invalida la clave vieja: si se vuelve a activar, requiere escanear un QR nuevo.
         await userManager.ResetAuthenticatorKeyAsync(user);
 
         return OperationResult.Success();
@@ -311,7 +367,7 @@ public class AuthService(
             }
         }
 
-        return await IssueTokensAsync(user, cancellationToken);
+        return await IssueTokensAsync(user, cancellationToken, includeUser: true);
     }
 
     public async Task<OperationResult> ConfirmEmailAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default)
@@ -333,11 +389,47 @@ public class AuthService(
         var user = await userManager.FindByEmailAsync(request.Email);
         if (user is null || await userManager.IsEmailConfirmedAsync(user))
         {
-            // No revelamos si el email existe, ni si ya estaba confirmado.
             return;
         }
 
-        await SendConfirmationEmailAsync(user, cancellationToken);
+        try
+        {
+            await SendConfirmationEmailAsync(user, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Falló el reenvío de confirmación para {Email}.", user.Email);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Helpers privados
+    // ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Revoca todos los refresh tokens activos de un usuario.
+    /// Se usa tras un cambio/reset de contraseña para invalidar cualquier
+    /// sesión que no sea la actual. Devuelve cuántos tokens fueron revocados.
+    /// </summary>
+    private async Task<int> RevokeAllRefreshTokensAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var activeTokens = await dbContext.RefreshTokens
+            .Where(rt => rt.UserId == userId && rt.RevokedAtUtc == null)
+            .ToListAsync(cancellationToken);
+
+        if (activeTokens.Count == 0)
+        {
+            return 0;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var token in activeTokens)
+        {
+            token.RevokedAtUtc = now;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return activeTokens.Count;
     }
 
     private async Task SendConfirmationEmailAsync(ApplicationUser user, CancellationToken cancellationToken)
@@ -352,7 +444,16 @@ public class AuthService(
             <p>Si no fuiste tú quien se registró, puedes ignorar este correo.</p>
             """;
 
-        await emailSender.SendAsync(user.Email!, "Confirma tu correo - IcfesApp", body, cancellationToken);
+        try
+        {
+            await emailSender.SendAsync(user.Email!, "Confirma tu correo - IcfesApp", body, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Falló el envío del correo de confirmación para {Email}. El usuario fue creado; se puede reintentar con /api/auth/resend-confirmation.",
+                user.Email);
+        }
     }
 
     private static string FormatKey(string unformattedKey)
@@ -373,7 +474,10 @@ public class AuthService(
         return formatted.ToString();
     }
 
-    private async Task<AuthResult> IssueTokensAsync(ApplicationUser user, CancellationToken cancellationToken)
+    private async Task<AuthResult> IssueTokensAsync(
+        ApplicationUser user,
+        CancellationToken cancellationToken,
+        bool includeUser)
     {
         var roles = await userManager.GetRolesAsync(user);
         var (accessToken, accessExpiresAtUtc) = jwtTokenService.CreateAccessToken(user.Id, user.Email!, roles);
@@ -388,6 +492,18 @@ public class AuthService(
         });
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return AuthResult.Success(accessToken, accessExpiresAtUtc, refreshTokenValue, refreshExpiresAtUtc, roles);
+        UserInfoDto? userInfo = includeUser
+            ? new UserInfoDto
+            {
+                Id = user.Id,
+                Email = user.Email!,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                Roles = roles.ToList(),
+                SchoolId = user.SchoolId
+            }
+            : null;
+
+        return AuthResult.Success(accessToken, accessExpiresAtUtc, refreshTokenValue, refreshExpiresAtUtc, userInfo);
     }
 }

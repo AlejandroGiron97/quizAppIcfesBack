@@ -1,3 +1,5 @@
+using IcfesApp.Application.Auth.Dtos;
+
 namespace IcfesApp.Application.Auth;
 
 public class AuthResult
@@ -10,7 +12,12 @@ public class AuthResult
     public DateTime? AccessTokenExpiresAtUtc { get; private init; }
     public string? RefreshToken { get; private init; }
     public DateTime? RefreshTokenExpiresAtUtc { get; private init; }
-    public IReadOnlyList<string> Roles { get; private init; } = [];
+
+    /// <summary>
+    /// Datos del usuario. Null cuando la emisión de tokens no los incluye (ej: /refresh).
+    /// </summary>
+    public UserInfoDto? User { get; private init; }
+
     public IReadOnlyList<string> Errors { get; private init; } = [];
 
     public static AuthResult Success(
@@ -18,15 +25,15 @@ public class AuthResult
         DateTime accessTokenExpiresAtUtc,
         string refreshToken,
         DateTime refreshTokenExpiresAtUtc,
-        IEnumerable<string> roles) => new()
-    {
-        Succeeded = true,
-        AccessToken = accessToken,
-        AccessTokenExpiresAtUtc = accessTokenExpiresAtUtc,
-        RefreshToken = refreshToken,
-        RefreshTokenExpiresAtUtc = refreshTokenExpiresAtUtc,
-        Roles = roles.ToList()
-    };
+        UserInfoDto? user = null) => new()
+        {
+            Succeeded = true,
+            AccessToken = accessToken,
+            AccessTokenExpiresAtUtc = accessTokenExpiresAtUtc,
+            RefreshToken = refreshToken,
+            RefreshTokenExpiresAtUtc = refreshTokenExpiresAtUtc,
+            User = user
+        };
 
     public static AuthResult RegistrationPending() => new()
     {

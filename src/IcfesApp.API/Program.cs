@@ -1,20 +1,25 @@
 using IcfesApp.Infrastructure;
 using IcfesApp.Infrastructure.Identity;
+using IcfesApp.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddInfrastructure(builder.Configuration);
+// ─────────────────────────────────────────────────────────────
+// 1. Servicios
+// ─────────────────────────────────────────────────────────────
 
+builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+
+// Documento OpenAPI nativo (.NET 10) → expone /openapi/v1.json
 builder.Services.AddOpenApi();
 
+// CORS solo en Development: permite cualquier localhost/127.0.0.1 (cualquier puerto)
+// para no bloquear a los equipos de front (Angular, React, etc.) mientras prueban.
 const string LocalDevCorsPolicy = "LocalDevCorsPolicy";
 if (builder.Environment.IsDevelopment())
 {
-    // Solo en Development: permite cualquier origen localhost/127.0.0.1 (cualquier puerto)
-    // para no bloquear a los equipos de front (Angular, React, etc.) mientras prueban.
     builder.Services.AddCors(options =>
     {
         options.AddPolicy(LocalDevCorsPolicy, policy =>
@@ -28,10 +33,20 @@ if (builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// ─────────────────────────────────────────────────────────────
+// 2. Pipeline HTTP
+// ─────────────────────────────────────────────────────────────
+
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi(); // sirve /openapi/v1.json
+
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "IcfesApp API v1");
+        options.RoutePrefix = "swagger"; // UI en /swagger
+    });
+
     app.UseCors(LocalDevCorsPolicy);
 }
 
@@ -42,9 +57,17 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+// ─────────────────────────────────────────────────────────────
+// 3. Seeding inicial (crea BD si no existe + aplica migraciones + roles)
+// ─────────────────────────────────────────────────────────────
+
 using (var scope = app.Services.CreateScope())
 {
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await db.Database.MigrateAsync();
+
     await RoleSeeder.SeedAsync(scope.ServiceProvider);
+    await DataSeeder.SeedAsync(scope.ServiceProvider);
 }
 
 app.Run();

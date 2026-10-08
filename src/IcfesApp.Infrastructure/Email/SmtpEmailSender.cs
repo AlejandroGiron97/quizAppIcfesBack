@@ -1,13 +1,16 @@
 using IcfesApp.Application.Common.Interfaces;
 using MailKit.Net.Smtp;
 using MailKit.Security;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using MimeKit.Text;
 
 namespace IcfesApp.Infrastructure.Email;
 
-public class SmtpEmailSender(IOptions<EmailSettings> options) : IEmailSender
+public class SmtpEmailSender(
+    IOptions<EmailSettings> options,
+    ILogger<SmtpEmailSender> logger) : IEmailSender
 {
     private readonly EmailSettings _settings = options.Value;
 
@@ -20,9 +23,19 @@ public class SmtpEmailSender(IOptions<EmailSettings> options) : IEmailSender
         message.Body = new TextPart(TextFormat.Html) { Text = htmlBody };
 
         using var client = new SmtpClient();
-        await client.ConnectAsync(_settings.SmtpHost, _settings.SmtpPort, SecureSocketOptions.StartTls, cancellationToken);
-        await client.AuthenticateAsync(_settings.Username, _settings.Password, cancellationToken);
-        await client.SendAsync(message, cancellationToken);
-        await client.DisconnectAsync(true, cancellationToken);
+        try
+        {
+            await client.ConnectAsync(_settings.SmtpHost, _settings.SmtpPort, SecureSocketOptions.StartTls, cancellationToken);
+            await client.AuthenticateAsync(_settings.Username, _settings.Password, cancellationToken);
+            await client.SendAsync(message, cancellationToken);
+            await client.DisconnectAsync(true, cancellationToken);
+
+            logger.LogInformation("✅ Correo enviado a {To} vía {Host}", toEmail, _settings.SmtpHost);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "❌ Fallo al enviar correo a {To} vía {Host}", toEmail, _settings.SmtpHost);
+            throw;
+        }
     }
 }

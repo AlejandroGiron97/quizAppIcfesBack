@@ -13,6 +13,7 @@ public interface IAuthService
     Task RevokeRefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default);
     Task ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default);
     Task<OperationResult> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default);
+    Task<OperationResult> ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken cancellationToken = default);
     Task<TwoFactorSetupDto?> GetTwoFactorSetupAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Result<IReadOnlyList<string>>> EnableTwoFactorAsync(Guid userId, string code, CancellationToken cancellationToken = default);
     Task<OperationResult> DisableTwoFactorAsync(Guid userId, string code, CancellationToken cancellationToken = default);
