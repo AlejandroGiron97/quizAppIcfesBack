@@ -2,6 +2,7 @@ using IcfesApp.Infrastructure;
 using IcfesApp.Infrastructure.Identity;
 using IcfesApp.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,11 +13,36 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
 
-// Documento OpenAPI nativo (.NET 10) → expone /openapi/v1.json
-builder.Services.AddOpenApi();
+// OpenAPI + botón Authorize (Bearer JWT) aplicado a nivel de operación
+builder.Services.AddOpenApi(options =>
+{
+    // 1) Definir el esquema de seguridad
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Components ??= new OpenApiComponents();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            Description = "Pega el JWT de /api/auth/login. No incluyas la palabra 'Bearer'."
+        };
+        return Task.CompletedTask;
+    });
 
-// CORS solo en Development: permite cualquier localhost/127.0.0.1 (cualquier puerto)
-// para no bloquear a los equipos de front (Angular, React, etc.) mientras prueban.
+    // 2) Aplicar el requisito de seguridad a TODAS las operaciones
+    options.AddOperationTransformer((operation, context, cancellationToken) =>
+    {
+        operation.Security ??= new List<OpenApiSecurityRequirement>();
+        operation.Security.Add(new OpenApiSecurityRequirement
+        {
+            [new OpenApiSecuritySchemeReference("Bearer")] = new List<string>()
+        });
+        return Task.CompletedTask;
+    });
+});
+
 const string LocalDevCorsPolicy = "LocalDevCorsPolicy";
 if (builder.Environment.IsDevelopment())
 {
@@ -39,12 +65,12 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi(); // sirve /openapi/v1.json
+    app.MapOpenApi();
 
     app.UseSwaggerUI(options =>
     {
         options.SwaggerEndpoint("/openapi/v1.json", "IcfesApp API v1");
-        options.RoutePrefix = "swagger"; // UI en /swagger
+        options.RoutePrefix = "swagger";
     });
 
     app.UseCors(LocalDevCorsPolicy);
@@ -58,7 +84,7 @@ app.UseAuthorization();
 app.MapControllers();
 
 // ─────────────────────────────────────────────────────────────
-// 3. Seeding inicial (crea BD si no existe + aplica migraciones + roles)
+// 3. Seeding inicial
 // ─────────────────────────────────────────────────────────────
 
 using (var scope = app.Services.CreateScope())

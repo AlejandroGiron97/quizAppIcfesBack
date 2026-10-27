@@ -9,6 +9,8 @@ public class SchoolConfiguration : IEntityTypeConfiguration<School>
     public void Configure(EntityTypeBuilder<School> builder)
     {
         builder.Property(s => s.Name).IsRequired().HasMaxLength(200);
+        builder.Property(s => s.Domain).HasMaxLength(150);
         builder.Property(s => s.City).HasMaxLength(100);
+        builder.Property(s => s.IsActive).HasDefaultValue(true);
     }
 }

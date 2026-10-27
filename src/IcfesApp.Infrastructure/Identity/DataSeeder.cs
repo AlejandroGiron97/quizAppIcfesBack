@@ -20,8 +20,11 @@ public static class DataSeeder
         var schools = await SeedSchoolsAsync(context);
         var subjects = await SeedSubjectsAsync(context);
         await SeedUsersAsync(userManager, schools);
+        await SeedInvitationCodesAsync(context, schools);
         await SeedQuestionsAsync(context, userManager, subjects);
         await SeedPracticeSessionsAsync(context, userManager, subjects);
+        var plans = await SeedPlansAsync(context);
+        await SeedSubscriptionsAsync(context, plans, schools);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -73,14 +76,14 @@ public static class DataSeeder
     // ─────────────────────────────────────────────────────────────
     private static async Task SeedUsersAsync(UserManager<ApplicationUser> userManager, Dictionary<string, School> schools)
     {
-        await EnsureUserAsync(userManager, "teacher1@test.com", "Carlos", "Ramírez",  Roles.Teacher, schools["Colegio San José"].Id);
-        await EnsureUserAsync(userManager, "teacher2@test.com", "María",  "González", Roles.Teacher, schools["Liceo Moderno"].Id);
+        await EnsureUserAsync(userManager, "teacher1@test.com", "Carlos", "Ramírez", Roles.Teacher, schools["Colegio San José"].Id);
+        await EnsureUserAsync(userManager, "teacher2@test.com", "María", "González", Roles.Teacher, schools["Liceo Moderno"].Id);
 
-        await EnsureUserAsync(userManager, "student1@test.com", "Juan",   "Pérez",     Roles.Student, schools["Colegio San José"].Id);
+        await EnsureUserAsync(userManager, "student1@test.com", "Juan", "Pérez", Roles.Student, schools["Colegio San José"].Id);
         await EnsureUserAsync(userManager, "student2@test.com", "Pepito", "Rodríguez", Roles.Student, schools["Colegio San José"].Id);
-        await EnsureUserAsync(userManager, "student3@test.com", "Ana",    "Martínez",  Roles.Student, schools["Liceo Moderno"].Id);
-        await EnsureUserAsync(userManager, "student4@test.com", "Diego",  "López",     Roles.Student, null);
-        await EnsureUserAsync(userManager, "student5@test.com", "Sofía",  "Hernández", Roles.Student, null);
+        await EnsureUserAsync(userManager, "student3@test.com", "Ana", "Martínez", Roles.Student, schools["Liceo Moderno"].Id);
+        await EnsureUserAsync(userManager, "student4@test.com", "Diego", "López", Roles.Student, null);
+        await EnsureUserAsync(userManager, "student5@test.com", "Sofía", "Hernández", Roles.Student, null);
     }
 
     private static async Task EnsureUserAsync(
@@ -98,12 +101,62 @@ public static class DataSeeder
             FirstName = firstName,
             LastName = lastName,
             EmailConfirmed = true,
-            SchoolId = schoolId
+            SchoolId = schoolId,
+            Type = schoolId.HasValue
+                ? UserType.Institutional
+                : UserType.Particular
         };
 
         var result = await userManager.CreateAsync(user, DefaultPassword);
         if (result.Succeeded)
             await userManager.AddToRoleAsync(user, role);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 3.5. InvitationCodes (para probar el flujo institucional)
+    // ─────────────────────────────────────────────────────────────
+    private static async Task SeedInvitationCodesAsync(
+        ApplicationDbContext context,
+        Dictionary<string, School> schools)
+    {
+        if (await context.InvitationCodes.AnyAsync()) return;
+
+        var sanJose = schools["Colegio San José"].Id;
+        var liceo = schools["Liceo Moderno"].Id;
+
+        var codes = new List<InvitationCode>
+        {
+            new()
+            {
+                Code = "COLEGIO-SJ-2026",
+                InstitutionId = sanJose,
+                MaxUses = 100,
+                Uses = 0,
+                ExpiresAtUtc = DateTime.UtcNow.AddMonths(6),
+                IsActive = true
+            },
+            new()
+            {
+                Code = "LICEOMODERNO-2026",
+                InstitutionId = liceo,
+                MaxUses = 50,
+                Uses = 0,
+                ExpiresAtUtc = DateTime.UtcNow.AddMonths(6),
+                IsActive = true
+            },
+            new()
+            {
+                Code = "PRUEBA-ILIMITADO",
+                InstitutionId = sanJose,
+                MaxUses = -1,
+                Uses = 0,
+                ExpiresAtUtc = null,
+                IsActive = true
+            }
+        };
+
+        context.InvitationCodes.AddRange(codes);
+        await context.SaveChangesAsync();
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -122,9 +175,9 @@ public static class DataSeeder
 
         var math = subjects["Matemáticas"].Id;
         var read = subjects["Lectura Crítica"].Id;
-        var sci  = subjects["Ciencias Naturales"].Id;
-        var soc  = subjects["Ciencias Sociales"].Id;
-        var eng  = subjects["Inglés"].Id;
+        var sci = subjects["Ciencias Naturales"].Id;
+        var soc = subjects["Ciencias Sociales"].Id;
+        var eng = subjects["Inglés"].Id;
 
         var questions = new List<Question>
         {
@@ -236,15 +289,10 @@ public static class DataSeeder
         var student4 = await userManager.FindByEmailAsync("student4@test.com");
         if (student1 is null || student2 is null || student3 is null || student4 is null) return;
 
-        // Sesión 1 — student1 — Matemáticas — Completada, 4/5 correctas
         await CreateCompletedSession(context, student1.Id, subjects["Matemáticas"].Id, DateTime.UtcNow.AddDays(-5), correctCount: 4, total: 5);
-        // Sesión 2 — student1 — Lectura Crítica — Completada, 3/5
         await CreateCompletedSession(context, student1.Id, subjects["Lectura Crítica"].Id, DateTime.UtcNow.AddDays(-3), correctCount: 3, total: 5);
-        // Sesión 3 — student2 — Matemáticas — Completada, 1/5
         await CreateCompletedSession(context, student2.Id, subjects["Matemáticas"].Id, DateTime.UtcNow.AddDays(-2), correctCount: 1, total: 5);
-        // Sesión 4 — student3 — Ciencias Naturales — En progreso, 2/5
         await CreateInProgressSession(context, student3.Id, subjects["Ciencias Naturales"].Id, answeredCount: 2);
-        // Sesión 5 — student4 — Inglés — Abandonada
         await CreateAbandonedSession(context, student4.Id, subjects["Inglés"].Id);
     }
 
@@ -343,6 +391,157 @@ public static class DataSeeder
         };
 
         context.PracticeSessions.Add(session);
+        await context.SaveChangesAsync();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 6. Plans (catálogo de lo que se vende)
+    // ─────────────────────────────────────────────────────────────
+    private static async Task<Dictionary<string, Plan>> SeedPlansAsync(ApplicationDbContext context)
+    {
+        var existing = await context.Plans.ToListAsync();
+        if (existing.Count > 0)
+            return existing.ToDictionary(p => p.Code, p => p);
+
+        var plans = new List<Plan>
+        {
+            new()
+            {
+                Code = "FREE",
+                Name = "Prueba gratuita",
+                Description = "7 días de acceso completo. Se activa una vez por usuario.",
+                Target = PlanTarget.Particular,
+                DurationDays = 7,
+                Price = 0m,
+                Currency = "COP",
+                DisplayOrder = 1,
+                IsActive = true
+            },
+            new()
+            {
+                Code = "STANDARD",
+                Name = "Plan Estándar",
+                Description = "Acceso completo por 30 días.",
+                Target = PlanTarget.Particular,
+                DurationDays = 30,
+                Price = 29900m,
+                Currency = "COP",
+                DisplayOrder = 2,
+                IsActive = true
+            },
+            new()
+            {
+                Code = "SEMESTRAL",
+                Name = "Plan Semestral",
+                Description = "Acceso completo por 180 días. Ahorra 17%.",
+                Target = PlanTarget.Particular,
+                DurationDays = 180,
+                Price = 149900m,
+                Currency = "COP",
+                DisplayOrder = 3,
+                IsActive = true
+            },
+            new()
+            {
+                Code = "INSTITUTIONAL",
+                Name = "Licencia Institucional",
+                Description = "Acceso completo por 365 días. Hasta 200 estudiantes.",
+                Target = PlanTarget.Institutional,
+                DurationDays = 365,
+                Price = 1800000m,
+                Currency = "COP",
+                DisplayOrder = 1,
+                IsActive = true
+            }
+        };
+
+        context.Plans.AddRange(plans);
+        await context.SaveChangesAsync();
+        return plans.ToDictionary(p => p.Code, p => p);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 7. Subscriptions (demo de los dos modelos)
+    // ─────────────────────────────────────────────────────────────
+    private static async Task SeedSubscriptionsAsync(
+        ApplicationDbContext context,
+        Dictionary<string, Plan> plans,
+        Dictionary<string, School> schools)
+    {
+        if (await context.Subscriptions.AnyAsync()) return;
+
+        var now = DateTime.UtcNow;
+
+        // ── Institucionales: 1 suscripción por institución ──
+        var institutionalPlan = plans["INSTITUTIONAL"];
+
+        var sanJoseSub = new Subscription
+        {
+            InstitutionId = schools["Colegio San José"].Id,
+            PlanId = institutionalPlan.Id,
+            Status = SubscriptionStatus.Active,
+            StartedAtUtc = now.AddDays(-30),
+            ExpiresAtUtc = now.AddDays(335),
+            AutoRenew = false,
+            Notes = "Licencia anual - Factura #SJ-2026-001 (demo)"
+        };
+
+        var liceoSub = new Subscription
+        {
+            InstitutionId = schools["Liceo Moderno"].Id,
+            PlanId = institutionalPlan.Id,
+            Status = SubscriptionStatus.Active,
+            StartedAtUtc = now.AddDays(-15),
+            ExpiresAtUtc = now.AddDays(350),
+            AutoRenew = false,
+            Notes = "Licencia anual - Factura #LM-2026-002 (demo)"
+        };
+
+        // I.E. La Esperanza NO tiene suscripción (para probar el caso "institución sin pago")
+
+        // ── Particulares ──
+        var student4 = await context.Users
+            .FirstOrDefaultAsync(u => u.Email == "student4@test.com");
+        var student5 = await context.Users
+            .FirstOrDefaultAsync(u => u.Email == "student5@test.com");
+
+        var subscriptions = new List<Subscription>
+        {
+            sanJoseSub,
+            liceoSub
+        };
+
+        if (student4 is not null)
+        {
+            // student4: tiene STANDARD activo (pagó con tarjeta)
+            subscriptions.Add(new Subscription
+            {
+                UserId = student4.Id,
+                PlanId = plans["STANDARD"].Id,
+                Status = SubscriptionStatus.Active,
+                StartedAtUtc = now.AddDays(-10),
+                ExpiresAtUtc = now.AddDays(20),
+                AutoRenew = true,
+                Notes = "Suscripción demo - Stripe"
+            });
+        }
+
+        if (student5 is not null)
+        {
+            // student5: usó FREE hace tiempo, ya expiró
+            subscriptions.Add(new Subscription
+            {
+                UserId = student5.Id,
+                PlanId = plans["FREE"].Id,
+                Status = SubscriptionStatus.Expired,
+                StartedAtUtc = now.AddDays(-30),
+                ExpiresAtUtc = now.AddDays(-23),
+                AutoRenew = false,
+                Notes = "Trial gratuito vencido"
+            });
+        }
+
+        context.Subscriptions.AddRange(subscriptions);
         await context.SaveChangesAsync();
     }
 }

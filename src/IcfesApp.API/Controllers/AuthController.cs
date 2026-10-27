@@ -91,6 +91,7 @@ public class AuthController(IAuthService authService) : ControllerBase
     public IActionResult Session()
     {
         var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+        var typeClaim = User.FindFirstValue("user_type") ?? "Particular";
 
         return Ok(new UserInfoDto
         {
@@ -98,7 +99,8 @@ public class AuthController(IAuthService authService) : ControllerBase
             Email = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty,
             FirstName = string.Empty,
             LastName = string.Empty,
-            Roles = roles
+            Roles = roles,
+            Type = typeClaim
         });
     }
 

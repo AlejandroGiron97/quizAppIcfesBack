@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using IcfesApp.Application.Common.Interfaces;
+using IcfesApp.Domain.Enums;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
@@ -12,7 +13,11 @@ public class JwtTokenService(IOptions<JwtSettings> options) : IJwtTokenService
 {
     private readonly JwtSettings _settings = options.Value;
 
-    public (string Token, DateTime ExpiresAtUtc) CreateAccessToken(Guid userId, string email, IEnumerable<string> roles)
+    public (string Token, DateTime ExpiresAtUtc) CreateAccessToken(
+        Guid userId,
+        string email,
+        IEnumerable<string> roles,
+        UserType? type = null)
     {
         var expiresAtUtc = DateTime.UtcNow.AddMinutes(_settings.AccessTokenMinutes);
 
@@ -24,6 +29,12 @@ public class JwtTokenService(IOptions<JwtSettings> options) : IJwtTokenService
             new(ClaimTypes.Email, email),
         };
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+
+        // Tipo de usuario como claim para que /session lo pueda devolver sin consultar la BD.
+        if (type.HasValue)
+        {
+            claims.Add(new Claim("user_type", type.Value.ToString()));
+        }
 
         var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.Secret));
         var credentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
@@ -59,8 +70,6 @@ public class JwtTokenService(IOptions<JwtSettings> options) : IJwtTokenService
         var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.Secret));
         var credentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
 
-        // Vida corta a propósito: solo sirve para completar el login con el código TOTP,
-        // no es un access token y no debe usarse para nada más.
         var token = new JwtSecurityToken(
             issuer: _settings.Issuer,
             audience: _settings.Audience,
@@ -96,8 +105,6 @@ public class JwtTokenService(IOptions<JwtSettings> options) : IJwtTokenService
                 return null;
             }
 
-            // JwtSecurityTokenHandler remapea "sub" a ClaimTypes.NameIdentifier por defecto al validar
-            // (comportamiento legado), así que hay que buscar ambos nombres posibles.
             var sub = principal.Claims
                 .FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub || c.Type == ClaimTypes.NameIdentifier)?.Value;
 

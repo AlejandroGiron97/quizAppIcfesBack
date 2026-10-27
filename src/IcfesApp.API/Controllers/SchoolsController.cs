@@ -8,9 +8,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace IcfesApp.API.Controllers;
 
 [ApiController]
-[Route("api/schools")]
+[Route("api/institutions")]
 [Authorize]
-public class SchoolsController(ISchoolService schoolService) : ControllerBase
+public class InstitutionsController(ISchoolService schoolService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
@@ -19,8 +19,8 @@ public class SchoolsController(ISchoolService schoolService) : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
-        var school = await schoolService.GetByIdAsync(id, cancellationToken);
-        return school is null ? NotFound() : Ok(school);
+        var institution = await schoolService.GetByIdAsync(id, cancellationToken);
+        return institution is null ? NotFound() : Ok(institution);
     }
 
     [HttpPost]

@@ -22,26 +22,35 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
             return Result<PracticeSessionDto>.Failed(["La materia indicada no existe."]);
         }
 
-        var questionsQuery = dbContext.Questions
+        // 1. Traemos todas las preguntas de la materia a memoria.
+        //    (EF Core no puede traducir Guid.NewGuid() a SQL).
+        var allQuestions = await dbContext.Questions
             .Include(q => q.Options)
             .Where(q => q.SubjectId == request.SubjectId)
-            .OrderBy(_ => Guid.NewGuid());
+            .ToListAsync(cancellationToken);
 
-        var questions = request.QuestionCount is int count
-            ? await questionsQuery.Take(count).ToListAsync(cancellationToken)
-            : await questionsQuery.ToListAsync(cancellationToken);
-
-        if (questions.Count == 0)
+        if (allQuestions.Count == 0)
         {
             return Result<PracticeSessionDto>.Failed(["La materia no tiene preguntas disponibles."]);
         }
+
+        // 2. Ordenamos aleatoriamente en C# (en memoria) y tomamos la cantidad solicitada.
+        var questions = allQuestions
+            .OrderBy(_ => Guid.NewGuid())
+            .Take(request.QuestionCount ?? allQuestions.Count)
+            .ToList();
 
         var session = new PracticeSession
         {
             StudentUserId = studentUserId,
             SubjectId = request.SubjectId,
             Status = PracticeSessionStatus.InProgress,
-            Answers = questions.Select(q => new StudentAnswer { QuestionId = q.Id, Question = q, IsCorrect = false }).ToList()
+            Answers = questions.Select(q => new StudentAnswer
+            {
+                QuestionId = q.Id,
+                Question = q, // Mantenemos la referencia para armar el DTO sin otra consulta
+                IsCorrect = false
+            }).ToList()
         };
 
         dbContext.PracticeSessions.Add(session);

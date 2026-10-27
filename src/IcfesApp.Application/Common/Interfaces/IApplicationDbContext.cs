@@ -6,6 +6,9 @@ namespace IcfesApp.Application.Common.Interfaces;
 public interface IApplicationDbContext
 {
     DbSet<School> Schools { get; }
+    DbSet<InvitationCode> InvitationCodes { get; }
+    DbSet<Plan> Plans { get; }
+    DbSet<Subscription> Subscriptions { get; }
     DbSet<Subject> Subjects { get; }
     DbSet<Question> Questions { get; }
     DbSet<QuestionOption> QuestionOptions { get; }

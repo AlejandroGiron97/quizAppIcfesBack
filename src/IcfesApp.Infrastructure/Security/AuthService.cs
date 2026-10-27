@@ -12,6 +12,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using IcfesApp.Domain.Entities;
+using IcfesApp.Domain.Enums;
 
 namespace IcfesApp.Infrastructure.Security;
 
@@ -28,26 +30,69 @@ public class AuthService(
 {
     public async Task<AuthResult> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
+        // 1. Si viene código de invitación, validarlo antes de crear el usuario.
+        InvitationCode? invitationCode = null;
+        if (!string.IsNullOrWhiteSpace(request.InvitationCode))
+        {
+            var normalizedCode = request.InvitationCode.Trim().ToUpperInvariant();
+            invitationCode = await dbContext.InvitationCodes
+                .FirstOrDefaultAsync(ic => ic.Code == normalizedCode, cancellationToken);
+
+            if (invitationCode is null)
+            {
+                return AuthResult.Failed(["El código de invitación no es válido."]);
+            }
+
+            if (!invitationCode.IsUsable)
+            {
+                return AuthResult.Failed(["El código de invitación ya expiró o alcanzó su límite de usos."]);
+            }
+        }
+
+        // 2. Crear el usuario con Type y SchoolId derivados del código (o Particular si no viene).
         var user = new ApplicationUser
         {
             UserName = request.Email,
             Email = request.Email,
             FirstName = request.FirstName,
-            LastName = request.LastName
+            LastName = request.LastName,
+            Type = invitationCode is not null ? UserType.Institutional : UserType.Particular,
+            SchoolId = invitationCode?.InstitutionId
         };
 
-        var result = await userManager.CreateAsync(user, request.Password);
-        if (!result.Succeeded)
+        // 3. Ejecutar en transacción: crear usuario + incrementar contador de usos del código.
+        // Si algo falla, se revierte todo para no dejar estado inconsistente.
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
         {
-            return AuthResult.Failed(result.Errors.Select(e => e.Description));
+            var result = await userManager.CreateAsync(user, request.Password);
+            if (!result.Succeeded)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return AuthResult.Failed(result.Errors.Select(e => e.Description));
+            }
+
+            await userManager.AddToRoleAsync(user, Roles.Student);
+
+            if (invitationCode is not null)
+            {
+                invitationCode.Uses++;
+                invitationCode.UpdatedAtUtc = DateTime.UtcNow;
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
         }
 
-        await userManager.AddToRoleAsync(user, Roles.Student);
         await SendConfirmationEmailAsync(user, cancellationToken);
 
         return AuthResult.RegistrationPending();
     }
-
     public async Task<AuthResult> RegisterStaffAsync(RegisterStaffRequest request, CancellationToken cancellationToken = default)
     {
         if (request.Role != Roles.Teacher && request.Role != Roles.Admin)
@@ -230,10 +275,7 @@ public class AuthService(
             return OperationResult.Failed(result.Errors.Select(e => e.Description));
         }
 
-        // Seguridad: al resetear la contraseña, revocamos todos los refresh tokens activos.
-        // Si el motivo del reset fue "cuenta comprometida", esto expulsa a cualquier sesión ajena.
         await RevokeAllRefreshTokensAsync(user.Id, cancellationToken);
-
         return OperationResult.Success();
     }
 
@@ -248,30 +290,24 @@ public class AuthService(
             return OperationResult.Failed(["Usuario no encontrado."]);
         }
 
-        // Validación 1: la contraseña actual debe ser correcta.
-        // Sin esto, cualquiera con un access token robado podría cambiar la contraseña.
         var isCurrentPasswordValid = await userManager.CheckPasswordAsync(user, request.CurrentPassword);
         if (!isCurrentPasswordValid)
         {
             return OperationResult.Failed(["La contraseña actual es incorrecta."]);
         }
 
-        // Validación 2: la nueva contraseña debe ser diferente a la actual.
         var isSamePassword = await userManager.CheckPasswordAsync(user, request.NewPassword);
         if (isSamePassword)
         {
             return OperationResult.Failed(["La nueva contraseña debe ser diferente a la actual."]);
         }
 
-        // Identity valida la política de contraseña automáticamente.
         var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
         if (!result.Succeeded)
         {
             return OperationResult.Failed(result.Errors.Select(e => e.Description));
         }
 
-        // Seguridad: revocar todos los refresh tokens activos.
-        // Si alguien más tenía sesión con la contraseña vieja, debe re-loguearse.
         var revokedCount = await RevokeAllRefreshTokensAsync(user.Id, cancellationToken);
 
         logger.LogInformation(
@@ -406,11 +442,6 @@ public class AuthService(
     // Helpers privados
     // ─────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Revoca todos los refresh tokens activos de un usuario.
-    /// Se usa tras un cambio/reset de contraseña para invalidar cualquier
-    /// sesión que no sea la actual. Devuelve cuántos tokens fueron revocados.
-    /// </summary>
     private async Task<int> RevokeAllRefreshTokensAsync(Guid userId, CancellationToken cancellationToken)
     {
         var activeTokens = await dbContext.RefreshTokens
@@ -480,7 +511,8 @@ public class AuthService(
         bool includeUser)
     {
         var roles = await userManager.GetRolesAsync(user);
-        var (accessToken, accessExpiresAtUtc) = jwtTokenService.CreateAccessToken(user.Id, user.Email!, roles);
+        var (accessToken, accessExpiresAtUtc) = jwtTokenService.CreateAccessToken(
+            user.Id, user.Email!, roles, user.Type);
         var refreshTokenValue = jwtTokenService.CreateRefreshToken();
         var refreshExpiresAtUtc = DateTime.UtcNow.AddDays(jwtOptions.Value.RefreshTokenDays);
 
@@ -500,6 +532,7 @@ public class AuthService(
                 FirstName = user.FirstName,
                 LastName = user.LastName,
                 Roles = roles.ToList(),
+                Type = user.Type.ToString(),
                 SchoolId = user.SchoolId
             }
             : null;
