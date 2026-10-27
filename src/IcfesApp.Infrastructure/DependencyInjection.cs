@@ -101,6 +101,7 @@ public static class DependencyInjection
         services.AddScoped<IInvitationCodeService, InvitationCodeService>();
         services.AddScoped<IPlanService, PlanService>();
         services.AddScoped<ISubscriptionService, SubscriptionService>();
+        services.AddScoped<IReportService, ReportService>();
         services.AddScoped<IPracticeSessionService, PracticeSessionService>();
 
         return services;

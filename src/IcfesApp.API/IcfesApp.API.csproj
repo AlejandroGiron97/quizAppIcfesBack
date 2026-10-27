@@ -26,4 +26,11 @@
 		<ProjectReference Include="..\IcfesApp.Infrastructure\IcfesApp.Infrastructure.csproj" />
 	</ItemGroup>
 
+	<!-- 👇 Bloque necesario para que el Seeder lea las preguntas del JSON 👇 -->
+	<ItemGroup Label="Archivos Estáticos">
+		<Content Update="preguntas_icfes.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
 </Project>

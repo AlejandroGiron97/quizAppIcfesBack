@@ -1,3 +1,4 @@
+using System.Text.Json;
 using IcfesApp.Domain.Constants;
 using IcfesApp.Domain.Entities;
 using IcfesApp.Domain.Enums;
@@ -21,7 +22,7 @@ public static class DataSeeder
         var subjects = await SeedSubjectsAsync(context);
         await SeedUsersAsync(userManager, schools);
         await SeedInvitationCodesAsync(context, schools);
-        await SeedQuestionsAsync(context, userManager, subjects);
+        await SeedRealQuestionsAsync(context, userManager, subjects); // Modificado
         await SeedPracticeSessionsAsync(context, userManager, subjects);
         var plans = await SeedPlansAsync(context);
         await SeedSubscriptionsAsync(context, plans, schools);
@@ -160,9 +161,9 @@ public static class DataSeeder
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 4. Questions (5 por materia = 25)
+    // 4. PREGUNTAS REALES ICFES (Desde JSON)
     // ─────────────────────────────────────────────────────────────
-    private static async Task SeedQuestionsAsync(
+    private static async Task SeedRealQuestionsAsync(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
         Dictionary<string, Subject> subjects)
@@ -173,77 +174,45 @@ public static class DataSeeder
         if (admin is null) return;
         var createdBy = admin.Id;
 
-        var math = subjects["Matemáticas"].Id;
-        var read = subjects["Lectura Crítica"].Id;
-        var sci = subjects["Ciencias Naturales"].Id;
-        var soc = subjects["Ciencias Sociales"].Id;
-        var eng = subjects["Inglés"].Id;
+        // Busca el archivo JSON en la carpeta de salida
+        var jsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "preguntas_icfes.json");
+        if (!File.Exists(jsonPath)) return;
 
-        var questions = new List<Question>
+        var jsonString = await File.ReadAllTextAsync(jsonPath);
+        var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var questionsData = JsonSerializer.Deserialize<List<QuestionSeedDto>>(jsonString, jsonOptions);
+
+        if (questionsData is null) return;
+
+        var questions = new List<Question>();
+
+        foreach (var item in questionsData)
         {
-            // ── Matemáticas ──
-            Q(math, createdBy, "Si x + 5 = 12, ¿cuál es el valor de x?", "Restamos 5 a ambos lados: x = 12 − 5 = 7.",
-                QuestionDifficulty.Easy, new[] { "5", "7", "12", "17" }, 1),
-            Q(math, createdBy, "¿Cuánto es 3/4 + 1/2?", "Se convierte 1/2 a 2/4. Luego 3/4 + 2/4 = 5/4.",
-                QuestionDifficulty.Medium, new[] { "4/6", "5/4", "1", "3/2" }, 1),
-            Q(math, createdBy, "En un triángulo rectángulo los catetos miden 3 y 4. ¿Cuánto mide la hipotenusa?", "Por Pitágoras: √(3² + 4²) = √25 = 5.",
-                QuestionDifficulty.Easy, new[] { "5", "6", "7", "12" }, 0),
-            Q(math, createdBy, "La derivada de f(x) = x³ + 2x es:", "Aplicando regla de potencias: 3x² + 2.",
-                QuestionDifficulty.Hard, new[] { "x² + 2", "3x² + 2", "3x + 2", "x³ + 2" }, 1),
-            Q(math, createdBy, "Un tren viaja a 80 km/h durante 2.5 horas. ¿Qué distancia recorre?", "Distancia = velocidad × tiempo = 80 × 2.5 = 200 km.",
-                QuestionDifficulty.Easy, new[] { "160 km", "180 km", "200 km", "220 km" }, 2),
+            if (!subjects.TryGetValue(item.Subject, out var subject)) continue;
 
-            // ── Lectura Crítica ──
-            Q(read, createdBy, "La palabra 'efímero' puede reemplazarse por:", "Efímero significa que dura poco tiempo; 'pasajero' es su sinónimo.",
-                QuestionDifficulty.Medium, new[] { "eterno", "pasajero", "sólido", "grande" }, 1),
-            Q(read, createdBy, "La idea principal de un párrafo suele estar en:", "Por convención, la idea principal suele ubicarse en la primera oración.",
-                QuestionDifficulty.Easy, new[] { "la primera oración", "el título", "la última coma", "las notas al pie" }, 0),
-            Q(read, createdBy, "El propósito de un texto argumentativo es:", "Buscar convencer al lector mediante razones y evidencias.",
-                QuestionDifficulty.Medium, new[] { "narrar hechos", "convencer al lector", "describir un lugar", "listar datos" }, 1),
-            Q(read, createdBy, "El texto expositivo se caracteriza por:", "Explicar o informar sobre un tema de forma objetiva.",
-                QuestionDifficulty.Medium, new[] { "expresar sentimientos", "informar objetivamente", "contar una historia", "dar órdenes" }, 1),
-            Q(read, createdBy, "Una inferencia es:", "Una conclusión que se obtiene a partir de la información explícita del texto.",
-                QuestionDifficulty.Hard, new[] { "un dato literal", "una conclusión implícita", "una cita textual", "un resumen" }, 1),
+            var difficulty = item.Difficulty switch
+            {
+                "Easy" => QuestionDifficulty.Easy,
+                "Medium" => QuestionDifficulty.Medium,
+                "Hard" => QuestionDifficulty.Hard,
+                _ => QuestionDifficulty.Medium
+            };
 
-            // ── Ciencias Naturales ──
-            Q(sci, createdBy, "El proceso mediante el cual las plantas producen su alimento es:", "La fotosíntesis convierte luz, agua y CO₂ en glucosa.",
-                QuestionDifficulty.Easy, new[] { "respiración", "fotosíntesis", "digestión", "transpiración" }, 1),
-            Q(sci, createdBy, "¿Qué estado de la materia tiene forma y volumen definidos?", "El estado sólido mantiene forma y volumen constante.",
-                QuestionDifficulty.Easy, new[] { "sólido", "líquido", "gaseoso", "plasma" }, 0),
-            Q(sci, createdBy, "La unidad básica de la vida es:", "La célula es la unidad estructural y funcional de todo ser vivo.",
-                QuestionDifficulty.Easy, new[] { "el átomo", "la célula", "el tejido", "el órgano" }, 1),
-            Q(sci, createdBy, "El ADN se encuentra principalmente en:", "En células eucariotas el ADN está en el núcleo.",
-                QuestionDifficulty.Medium, new[] { "el citoplasma", "el núcleo", "la pared celular", "los ribosomas" }, 1),
-            Q(sci, createdBy, "La ley de acción y reacción es la:", "Corresponde a la tercera ley de Newton.",
-                QuestionDifficulty.Medium, new[] { "primera ley", "segunda ley", "tercera ley", "ley de gravitación" }, 2),
-
-            // ── Ciencias Sociales ──
-            Q(soc, createdBy, "La Revolución Francesa comenzó en el año:", "Se inició en 1789 con la toma de la Bastilla.",
-                QuestionDifficulty.Medium, new[] { "1776", "1789", "1810", "1914" }, 1),
-            Q(soc, createdBy, "El poder ejecutivo en Colombia está representado por:", "El Presidente de la República encabeza el poder ejecutivo.",
-                QuestionDifficulty.Easy, new[] { "el Congreso", "el Presidente", "la Corte", "los gobernadores" }, 1),
-            Q(soc, createdBy, "El organismo que regula el comercio internacional es:", "La OMC (Organización Mundial del Comercio) regula el comercio global.",
-                QuestionDifficulty.Medium, new[] { "la ONU", "la OMC", "la OTAN", "la UNESCO" }, 1),
-            Q(soc, createdBy, "La globalización se caracteriza principalmente por:", "Integración económica, cultural y tecnológica entre países.",
-                QuestionDifficulty.Medium, new[] { "aislamiento regional", "integración mundial", "guerra comercial", "autarquía" }, 1),
-            Q(soc, createdBy, "La Constitución de Colombia de 1991 define al país como:", "Un Estado social de derecho, democrático y participativo.",
-                QuestionDifficulty.Medium, new[] { "una monarquía", "un Estado social de derecho", "un Estado confesional", "una dictadura" }, 1),
-
-            // ── Inglés ──
-            Q(eng, createdBy, "Choose the correct form: 'She ___ to school every day.'", "Tercera persona singular del presente simple: 'goes'.",
-                QuestionDifficulty.Easy, new[] { "go", "goes", "going", "gone" }, 1),
-            Q(eng, createdBy, "What is the past tense of 'go'?", "El pasado irregular de 'go' es 'went'.",
-                QuestionDifficulty.Easy, new[] { "goed", "goes", "went", "gone" }, 2),
-            Q(eng, createdBy, "Select the correct sentence:", "Uso correcto del present perfect con 'for'.",
-                QuestionDifficulty.Medium, new[] { "I live here since 5 years.", "I have lived here for 5 years.", "I am living here 5 years.", "I lived here for 5 years ago." }, 1),
-            Q(eng, createdBy, "The word 'beautiful' is a(n):", "'Beautiful' describe un sustantivo, por lo tanto es un adjetivo.",
-                QuestionDifficulty.Easy, new[] { "noun", "verb", "adjective", "adverb" }, 2),
-            Q(eng, createdBy, "Complete: 'If it rains, I ___ stay home.'", "Primera condicional: 'if' + presente, futuro con 'will'.",
-                QuestionDifficulty.Medium, new[] { "would", "will", "did", "am" }, 1),
-        };
+            questions.Add(Q(subject.Id, createdBy, item.Text, item.Justification, difficulty, item.Options.ToArray(), item.CorrectIndex));
+        }
 
         context.Questions.AddRange(questions);
         await context.SaveChangesAsync();
+    }
+
+    private class QuestionSeedDto
+    {
+        public string Subject { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+        public string Justification { get; set; } = string.Empty;
+        public string Difficulty { get; set; } = "Medium";
+        public List<string> Options { get; set; } = new();
+        public int CorrectIndex { get; set; }
     }
 
     private static Question Q(
@@ -395,7 +364,7 @@ public static class DataSeeder
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 6. Plans (catálogo de lo que se vende)
+    // 6. Plans
     // ─────────────────────────────────────────────────────────────
     private static async Task<Dictionary<string, Plan>> SeedPlansAsync(ApplicationDbContext context)
     {
@@ -405,54 +374,10 @@ public static class DataSeeder
 
         var plans = new List<Plan>
         {
-            new()
-            {
-                Code = "FREE",
-                Name = "Prueba gratuita",
-                Description = "7 días de acceso completo. Se activa una vez por usuario.",
-                Target = PlanTarget.Particular,
-                DurationDays = 7,
-                Price = 0m,
-                Currency = "COP",
-                DisplayOrder = 1,
-                IsActive = true
-            },
-            new()
-            {
-                Code = "STANDARD",
-                Name = "Plan Estándar",
-                Description = "Acceso completo por 30 días.",
-                Target = PlanTarget.Particular,
-                DurationDays = 30,
-                Price = 29900m,
-                Currency = "COP",
-                DisplayOrder = 2,
-                IsActive = true
-            },
-            new()
-            {
-                Code = "SEMESTRAL",
-                Name = "Plan Semestral",
-                Description = "Acceso completo por 180 días. Ahorra 17%.",
-                Target = PlanTarget.Particular,
-                DurationDays = 180,
-                Price = 149900m,
-                Currency = "COP",
-                DisplayOrder = 3,
-                IsActive = true
-            },
-            new()
-            {
-                Code = "INSTITUTIONAL",
-                Name = "Licencia Institucional",
-                Description = "Acceso completo por 365 días. Hasta 200 estudiantes.",
-                Target = PlanTarget.Institutional,
-                DurationDays = 365,
-                Price = 1800000m,
-                Currency = "COP",
-                DisplayOrder = 1,
-                IsActive = true
-            }
+            new() { Code = "FREE", Name = "Prueba gratuita", Description = "7 días de acceso completo. Se activa una vez por usuario.", Target = PlanTarget.Particular, DurationDays = 7, Price = 0m, Currency = "COP", DisplayOrder = 1, IsActive = true },
+            new() { Code = "STANDARD", Name = "Plan Estándar", Description = "Acceso completo por 30 días.", Target = PlanTarget.Particular, DurationDays = 30, Price = 29900m, Currency = "COP", DisplayOrder = 2, IsActive = true },
+            new() { Code = "SEMESTRAL", Name = "Plan Semestral", Description = "Acceso completo por 180 días. Ahorra 17%.", Target = PlanTarget.Particular, DurationDays = 180, Price = 149900m, Currency = "COP", DisplayOrder = 3, IsActive = true },
+            new() { Code = "INSTITUTIONAL", Name = "Licencia Institucional", Description = "Acceso completo por 365 días. Hasta 200 estudiantes.", Target = PlanTarget.Institutional, DurationDays = 365, Price = 1800000m, Currency = "COP", DisplayOrder = 1, IsActive = true }
         };
 
         context.Plans.AddRange(plans);
@@ -461,7 +386,7 @@ public static class DataSeeder
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 7. Subscriptions (demo de los dos modelos)
+    // 7. Subscriptions
     // ─────────────────────────────────────────────────────────────
     private static async Task SeedSubscriptionsAsync(
         ApplicationDbContext context,
@@ -471,74 +396,24 @@ public static class DataSeeder
         if (await context.Subscriptions.AnyAsync()) return;
 
         var now = DateTime.UtcNow;
-
-        // ── Institucionales: 1 suscripción por institución ──
         var institutionalPlan = plans["INSTITUTIONAL"];
 
-        var sanJoseSub = new Subscription
-        {
-            InstitutionId = schools["Colegio San José"].Id,
-            PlanId = institutionalPlan.Id,
-            Status = SubscriptionStatus.Active,
-            StartedAtUtc = now.AddDays(-30),
-            ExpiresAtUtc = now.AddDays(335),
-            AutoRenew = false,
-            Notes = "Licencia anual - Factura #SJ-2026-001 (demo)"
-        };
+        var sanJoseSub = new Subscription { InstitutionId = schools["Colegio San José"].Id, PlanId = institutionalPlan.Id, Status = SubscriptionStatus.Active, StartedAtUtc = now.AddDays(-30), ExpiresAtUtc = now.AddDays(335), AutoRenew = false, Notes = "Licencia anual - Factura #SJ-2026-001 (demo)" };
+        var liceoSub = new Subscription { InstitutionId = schools["Liceo Moderno"].Id, PlanId = institutionalPlan.Id, Status = SubscriptionStatus.Active, StartedAtUtc = now.AddDays(-15), ExpiresAtUtc = now.AddDays(350), AutoRenew = false, Notes = "Licencia anual - Factura #LM-2026-002 (demo)" };
 
-        var liceoSub = new Subscription
-        {
-            InstitutionId = schools["Liceo Moderno"].Id,
-            PlanId = institutionalPlan.Id,
-            Status = SubscriptionStatus.Active,
-            StartedAtUtc = now.AddDays(-15),
-            ExpiresAtUtc = now.AddDays(350),
-            AutoRenew = false,
-            Notes = "Licencia anual - Factura #LM-2026-002 (demo)"
-        };
+        var student4 = await context.Users.FirstOrDefaultAsync(u => u.Email == "student4@test.com");
+        var student5 = await context.Users.FirstOrDefaultAsync(u => u.Email == "student5@test.com");
 
-        // I.E. La Esperanza NO tiene suscripción (para probar el caso "institución sin pago")
-
-        // ── Particulares ──
-        var student4 = await context.Users
-            .FirstOrDefaultAsync(u => u.Email == "student4@test.com");
-        var student5 = await context.Users
-            .FirstOrDefaultAsync(u => u.Email == "student5@test.com");
-
-        var subscriptions = new List<Subscription>
-        {
-            sanJoseSub,
-            liceoSub
-        };
+        var subscriptions = new List<Subscription> { sanJoseSub, liceoSub };
 
         if (student4 is not null)
         {
-            // student4: tiene STANDARD activo (pagó con tarjeta)
-            subscriptions.Add(new Subscription
-            {
-                UserId = student4.Id,
-                PlanId = plans["STANDARD"].Id,
-                Status = SubscriptionStatus.Active,
-                StartedAtUtc = now.AddDays(-10),
-                ExpiresAtUtc = now.AddDays(20),
-                AutoRenew = true,
-                Notes = "Suscripción demo - Stripe"
-            });
+            subscriptions.Add(new Subscription { UserId = student4.Id, PlanId = plans["STANDARD"].Id, Status = SubscriptionStatus.Active, StartedAtUtc = now.AddDays(-10), ExpiresAtUtc = now.AddDays(20), AutoRenew = true, Notes = "Suscripción demo - Stripe" });
         }
 
         if (student5 is not null)
         {
-            // student5: usó FREE hace tiempo, ya expiró
-            subscriptions.Add(new Subscription
-            {
-                UserId = student5.Id,
-                PlanId = plans["FREE"].Id,
-                Status = SubscriptionStatus.Expired,
-                StartedAtUtc = now.AddDays(-30),
-                ExpiresAtUtc = now.AddDays(-23),
-                AutoRenew = false,
-                Notes = "Trial gratuito vencido"
-            });
+            subscriptions.Add(new Subscription { UserId = student5.Id, PlanId = plans["FREE"].Id, Status = SubscriptionStatus.Expired, StartedAtUtc = now.AddDays(-30), ExpiresAtUtc = now.AddDays(-23), AutoRenew = false, Notes = "Trial gratuito vencido" });
         }
 
         context.Subscriptions.AddRange(subscriptions);
