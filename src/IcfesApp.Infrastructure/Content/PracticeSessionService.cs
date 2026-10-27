@@ -22,8 +22,6 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
             return Result<PracticeSessionDto>.Failed(["La materia indicada no existe."]);
         }
 
-        // 1. Traemos todas las preguntas de la materia a memoria.
-        //    (EF Core no puede traducir Guid.NewGuid() a SQL).
         var allQuestions = await dbContext.Questions
             .Include(q => q.Options)
             .Where(q => q.SubjectId == request.SubjectId)
@@ -34,7 +32,6 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
             return Result<PracticeSessionDto>.Failed(["La materia no tiene preguntas disponibles."]);
         }
 
-        // 2. Ordenamos aleatoriamente en C# (en memoria) y tomamos la cantidad solicitada.
         var questions = allQuestions
             .OrderBy(_ => Guid.NewGuid())
             .Take(request.QuestionCount ?? allQuestions.Count)
@@ -48,7 +45,7 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
             Answers = questions.Select(q => new StudentAnswer
             {
                 QuestionId = q.Id,
-                Question = q, // Mantenemos la referencia para armar el DTO sin otra consulta
+                Question = q,
                 IsCorrect = false
             }).ToList()
         };
@@ -118,7 +115,8 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
             QuestionId = answer.QuestionId,
             IsCorrect = answer.IsCorrect,
             CorrectOptionId = correctOption.Id,
-            Justification = answer.Question.Justification
+            Justification = answer.Question.Justification,
+            JustificationImageUrl = answer.Question.JustificationImageUrl // <--- AGREGADO
         });
     }
 
@@ -150,10 +148,12 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
             {
                 QuestionId = a.QuestionId,
                 QuestionText = a.Question.Text,
+                QuestionImageUrl = a.Question.ImageUrl, // <--- AGREGADO
                 SelectedOptionId = a.SelectedOptionId,
                 CorrectOptionId = a.Question.Options.First(o => o.IsCorrect).Id,
                 IsCorrect = a.IsCorrect,
-                Justification = a.Question.Justification
+                Justification = a.Question.Justification,
+                JustificationImageUrl = a.Question.JustificationImageUrl // <--- AGREGADO
             }).ToList()
         });
     }
@@ -180,8 +180,14 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
         {
             QuestionId = a.QuestionId,
             Text = a.Question.Text,
+            ImageUrl = a.Question.ImageUrl, // <--- AGREGADO
             Options = a.Question.Options
-                .Select(o => new PracticeQuestionOptionDto { Id = o.Id, Text = o.Text })
+                .Select(o => new PracticeQuestionOptionDto
+                {
+                    Id = o.Id,
+                    Text = o.Text,
+                    ImageUrl = o.ImageUrl // <--- AGREGADO AQUÍ (ESTE ERA EL ERROR)
+                })
                 .ToList(),
             Answered = a.SelectedOptionId is not null,
             SelectedOptionId = a.SelectedOptionId

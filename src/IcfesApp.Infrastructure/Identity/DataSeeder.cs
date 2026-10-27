@@ -22,7 +22,7 @@ public static class DataSeeder
         var subjects = await SeedSubjectsAsync(context);
         await SeedUsersAsync(userManager, schools);
         await SeedInvitationCodesAsync(context, schools);
-        await SeedRealQuestionsAsync(context, userManager, subjects); // Modificado
+        await SeedRealQuestionsAsync(context, userManager, subjects); // Método corregido
         await SeedPracticeSessionsAsync(context, userManager, subjects);
         var plans = await SeedPlansAsync(context);
         await SeedSubscriptionsAsync(context, plans, schools);
@@ -114,7 +114,7 @@ public static class DataSeeder
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 3.5. InvitationCodes (para probar el flujo institucional)
+    // 3.5. InvitationCodes
     // ─────────────────────────────────────────────────────────────
     private static async Task SeedInvitationCodesAsync(
         ApplicationDbContext context,
@@ -127,33 +127,9 @@ public static class DataSeeder
 
         var codes = new List<InvitationCode>
         {
-            new()
-            {
-                Code = "COLEGIO-SJ-2026",
-                InstitutionId = sanJose,
-                MaxUses = 100,
-                Uses = 0,
-                ExpiresAtUtc = DateTime.UtcNow.AddMonths(6),
-                IsActive = true
-            },
-            new()
-            {
-                Code = "LICEOMODERNO-2026",
-                InstitutionId = liceo,
-                MaxUses = 50,
-                Uses = 0,
-                ExpiresAtUtc = DateTime.UtcNow.AddMonths(6),
-                IsActive = true
-            },
-            new()
-            {
-                Code = "PRUEBA-ILIMITADO",
-                InstitutionId = sanJose,
-                MaxUses = -1,
-                Uses = 0,
-                ExpiresAtUtc = null,
-                IsActive = true
-            }
+            new() { Code = "COLEGIO-SJ-2026", InstitutionId = sanJose, MaxUses = 100, Uses = 0, ExpiresAtUtc = DateTime.UtcNow.AddMonths(6), IsActive = true },
+            new() { Code = "LICEOMODERNO-2026", InstitutionId = liceo, MaxUses = 50, Uses = 0, ExpiresAtUtc = DateTime.UtcNow.AddMonths(6), IsActive = true },
+            new() { Code = "PRUEBA-ILIMITADO", InstitutionId = sanJose, MaxUses = -1, Uses = 0, ExpiresAtUtc = null, IsActive = true }
         };
 
         context.InvitationCodes.AddRange(codes);
@@ -161,20 +137,17 @@ public static class DataSeeder
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 4. PREGUNTAS REALES ICFES (Desde JSON)
+    // 4. PREGUNTAS REALES ICFES (Desde JSON) - CORREGIDO PARA OBJETOS
     // ─────────────────────────────────────────────────────────────
     private static async Task SeedRealQuestionsAsync(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
         Dictionary<string, Subject> subjects)
     {
-        if (await context.Questions.AnyAsync()) return;
-
         var admin = await userManager.FindByEmailAsync(RoleSeeder.DefaultAdminEmail);
         if (admin is null) return;
         var createdBy = admin.Id;
 
-        // Busca el archivo JSON en la carpeta de salida
         var jsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "preguntas_icfes.json");
         if (!File.Exists(jsonPath)) return;
 
@@ -184,11 +157,12 @@ public static class DataSeeder
 
         if (questionsData is null) return;
 
-        var questions = new List<Question>();
-
         foreach (var item in questionsData)
         {
             if (!subjects.TryGetValue(item.Subject, out var subject)) continue;
+
+            var alreadyExists = await context.Questions.AnyAsync(q => q.Text == item.Text && q.SubjectId == subject.Id);
+            if (alreadyExists) continue;
 
             var difficulty = item.Difficulty switch
             {
@@ -198,48 +172,53 @@ public static class DataSeeder
                 _ => QuestionDifficulty.Medium
             };
 
-            questions.Add(Q(subject.Id, createdBy, item.Text, item.Justification, difficulty, item.Options.ToArray(), item.CorrectIndex));
+            var question = new Question
+            {
+                Text = item.Text,
+                ImageUrl = item.ImageUrl,
+                Justification = item.Justification,
+                JustificationImageUrl = item.JustificationImageUrl,
+                Difficulty = difficulty,
+                SubjectId = subject.Id,
+                CreatedByUserId = createdBy
+            };
+
+            // NUEVA LÓGICA: Iterar sobre los objetos de opción
+            foreach (var opt in item.Options)
+            {
+                question.Options.Add(new QuestionOption
+                {
+                    Text = opt.Text,
+                    ImageUrl = opt.ImageUrl,
+                    IsCorrect = opt.IsCorrect
+                });
+            }
+
+            context.Questions.Add(question);
         }
 
-        context.Questions.AddRange(questions);
         await context.SaveChangesAsync();
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // CLASES DTO PARA LEER EL NUEVO JSON
+    // ─────────────────────────────────────────────────────────────
     private class QuestionSeedDto
     {
         public string Subject { get; set; } = string.Empty;
         public string Text { get; set; } = string.Empty;
+        public string? ImageUrl { get; set; }
         public string Justification { get; set; } = string.Empty;
+        public string? JustificationImageUrl { get; set; }
         public string Difficulty { get; set; } = "Medium";
-        public List<string> Options { get; set; } = new();
-        public int CorrectIndex { get; set; }
+        public List<SeedOptionDto> Options { get; set; } = new();
     }
 
-    private static Question Q(
-        Guid subjectId, Guid createdBy,
-        string text, string justification,
-        QuestionDifficulty difficulty,
-        string[] options, int correctIndex)
+    private class SeedOptionDto
     {
-        var question = new Question
-        {
-            Text = text,
-            Justification = justification,
-            Difficulty = difficulty,
-            SubjectId = subjectId,
-            CreatedByUserId = createdBy
-        };
-
-        for (int i = 0; i < options.Length; i++)
-        {
-            question.Options.Add(new QuestionOption
-            {
-                Text = options[i],
-                IsCorrect = i == correctIndex
-            });
-        }
-
-        return question;
+        public string Text { get; set; } = string.Empty;
+        public string? ImageUrl { get; set; }
+        public bool IsCorrect { get; set; }
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -276,6 +255,8 @@ public static class DataSeeder
             .Take(total)
             .ToListAsync();
 
+        if (questions.Count == 0) return;
+
         var session = new PracticeSession
         {
             StudentUserId = studentId,
@@ -292,7 +273,7 @@ public static class DataSeeder
         {
             var q = questions[i];
             var correctOption = q.Options.First(o => o.IsCorrect);
-            var wrongOption = q.Options.First(o => !o.IsCorrect);
+            var wrongOption = q.Options.FirstOrDefault(o => !o.IsCorrect) ?? correctOption;
             var isCorrect = i < correctCount;
 
             context.StudentAnswers.Add(new StudentAnswer
@@ -317,6 +298,8 @@ public static class DataSeeder
             .OrderBy(q => q.Text)
             .Take(5)
             .ToListAsync();
+
+        if (questions.Count == 0) return;
 
         var session = new PracticeSession
         {

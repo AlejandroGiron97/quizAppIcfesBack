@@ -16,7 +16,6 @@ builder.Services.AddControllers();
 // OpenAPI + botón Authorize (Bearer JWT) aplicado a nivel de operación
 builder.Services.AddOpenApi(options =>
 {
-    // 1) Definir el esquema de seguridad
     options.AddDocumentTransformer((document, context, cancellationToken) =>
     {
         document.Components ??= new OpenApiComponents();
@@ -31,7 +30,6 @@ builder.Services.AddOpenApi(options =>
         return Task.CompletedTask;
     });
 
-    // 2) Aplicar el requisito de seguridad a TODAS las operaciones
     options.AddOperationTransformer((operation, context, cancellationToken) =>
     {
         operation.Security ??= new List<OpenApiSecurityRequirement>();
@@ -60,20 +58,26 @@ if (builder.Environment.IsDevelopment())
 var app = builder.Build();
 
 // ─────────────────────────────────────────────────────────────
-// 2. Pipeline HTTP
+// 2. Pipeline HTTP (EL ORDEN AQUÍ ES CRÍTICO)
 // ─────────────────────────────────────────────────────────────
+
+// 1. CORS PRIMERO (Para que las imágenes y la API tengan los headers)
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors(LocalDevCorsPolicy);
+}
+
+// 2. Archivos estáticos después
+app.UseStaticFiles();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-
     app.UseSwaggerUI(options =>
     {
         options.SwaggerEndpoint("/openapi/v1.json", "IcfesApp API v1");
         options.RoutePrefix = "swagger";
     });
-
-    app.UseCors(LocalDevCorsPolicy);
 }
 
 app.UseHttpsRedirection();

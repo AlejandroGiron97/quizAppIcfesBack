@@ -8,9 +8,7 @@
 	</PropertyGroup>
 
 	<ItemGroup Label="OpenAPI / Swagger">
-		<!-- Genera el documento OpenAPI nativo en /openapi/v1.json -->
 		<PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
-		<!-- Solo se usa como UI (renderiza el JSON nativo) -->
 		<PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.2" />
 	</ItemGroup>
 
@@ -26,9 +24,12 @@
 		<ProjectReference Include="..\IcfesApp.Infrastructure\IcfesApp.Infrastructure.csproj" />
 	</ItemGroup>
 
-	<!-- 👇 Bloque necesario para que el Seeder lea las preguntas del JSON 👇 -->
 	<ItemGroup Label="Archivos Estáticos">
 		<Content Update="preguntas_icfes.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<!-- Usamos Update para modificar los archivos que el SDK ya incluyó por defecto -->
+		<Content Update="wwwroot\**\*">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
 	</ItemGroup>

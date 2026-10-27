@@ -176,8 +176,14 @@ namespace IcfesApp.Infrastructure.Migrations
                     b.Property<int>("Difficulty")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Justification")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("JustificationImageUrl")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("SubjectId")
@@ -204,6 +210,9 @@ namespace IcfesApp.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ImageUrl")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsCorrect")
