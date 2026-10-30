@@ -19,6 +19,6 @@ public static class IdentityExtensions
         LastName = user.LastName,
         Roles = roles.ToList(),
         Type = user.Type.ToString(),
-        SchoolId = user.SchoolId
+        InstitutionId = user.InstitutionId
     };
 }

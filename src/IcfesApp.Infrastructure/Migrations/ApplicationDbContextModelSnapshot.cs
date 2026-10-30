@@ -17,6 +17,44 @@ namespace IcfesApp.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
 
+            modelBuilder.Entity("IcfesApp.Domain.Entities.Institution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Domain")
+                        .HasMaxLength(150)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Institutions");
+                });
+
             modelBuilder.Entity("IcfesApp.Domain.Entities.InvitationCode", b =>
                 {
                     b.Property<Guid>("Id")
@@ -235,51 +273,13 @@ namespace IcfesApp.Infrastructure.Migrations
                     b.ToTable("QuestionOptions");
                 });
 
-            modelBuilder.Entity("IcfesApp.Domain.Entities.School", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("City")
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("CreatedByUserId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Domain")
-                        .HasMaxLength(150)
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasDefaultValue(true);
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Schools");
-                });
-
             modelBuilder.Entity("IcfesApp.Domain.Entities.StudentAnswer", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime>("AnsweredAtUtc")
+                    b.Property<DateTime?>("AnsweredAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAtUtc")
@@ -419,6 +419,9 @@ namespace IcfesApp.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("InstitutionId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("LastName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -447,9 +450,6 @@ namespace IcfesApp.Infrastructure.Migrations
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("INTEGER");
 
-                    b.Property<Guid?>("SchoolId")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("TEXT");
 
@@ -465,14 +465,14 @@ namespace IcfesApp.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("InstitutionId");
+
                     b.HasIndex("NormalizedEmail")
                         .HasDatabaseName("EmailIndex");
 
                     b.HasIndex("NormalizedUserName")
                         .IsUnique()
                         .HasDatabaseName("UserNameIndex");
-
-                    b.HasIndex("SchoolId");
 
                     b.ToTable("AspNetUsers", (string)null);
                 });
@@ -637,7 +637,7 @@ namespace IcfesApp.Infrastructure.Migrations
 
             modelBuilder.Entity("IcfesApp.Domain.Entities.InvitationCode", b =>
                 {
-                    b.HasOne("IcfesApp.Domain.Entities.School", "Institution")
+                    b.HasOne("IcfesApp.Domain.Entities.Institution", "Institution")
                         .WithMany()
                         .HasForeignKey("InstitutionId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -707,7 +707,7 @@ namespace IcfesApp.Infrastructure.Migrations
 
             modelBuilder.Entity("IcfesApp.Domain.Entities.Subscription", b =>
                 {
-                    b.HasOne("IcfesApp.Domain.Entities.School", "Institution")
+                    b.HasOne("IcfesApp.Domain.Entities.Institution", "Institution")
                         .WithMany()
                         .HasForeignKey("InstitutionId")
                         .OnDelete(DeleteBehavior.Cascade);
@@ -725,12 +725,12 @@ namespace IcfesApp.Infrastructure.Migrations
 
             modelBuilder.Entity("IcfesApp.Infrastructure.Identity.ApplicationUser", b =>
                 {
-                    b.HasOne("IcfesApp.Domain.Entities.School", "School")
+                    b.HasOne("IcfesApp.Domain.Entities.Institution", "Institution")
                         .WithMany()
-                        .HasForeignKey("SchoolId")
+                        .HasForeignKey("InstitutionId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.Navigation("School");
+                    b.Navigation("Institution");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

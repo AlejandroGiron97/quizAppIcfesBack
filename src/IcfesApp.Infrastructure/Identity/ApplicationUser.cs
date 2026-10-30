@@ -15,6 +15,6 @@ public class ApplicationUser : IdentityUser<Guid>
     /// </summary>
     public UserType Type { get; set; } = UserType.Particular;
 
-    public Guid? SchoolId { get; set; }
-    public School? School { get; set; }
+    public Guid? InstitutionId { get; set; }
+    public Institution? Institution { get; set; }
 }

@@ -7,7 +7,7 @@ namespace IcfesApp.Domain.Entities;
 /// without going through the payment flow. An institution Admin (or the Super Admin) generates it.
 /// 
 /// When registering with a valid code, the new user is linked to the code's institution
-/// (their SchoolId is set to the code's InstitutionId).
+/// (their InstitutionId is set to the code's InstitutionId).
 /// </summary>
 public class InvitationCode : BaseEntity
 {
@@ -16,7 +16,7 @@ public class InvitationCode : BaseEntity
 
     /// <summary>Institution that whoever uses this code gets linked to.</summary>
     public Guid InstitutionId { get; set; }
-    public School Institution { get; set; } = null!;
+    public Institution Institution { get; set; } = null!;
 
     /// <summary>How many times it can be used. -1 = unlimited. 0 = can no longer be used.</summary>
     public int MaxUses { get; set; } = -1;

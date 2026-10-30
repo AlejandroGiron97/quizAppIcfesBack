@@ -122,7 +122,7 @@ public static class DependencyInjection
         services.AddMemoryCache();
 
         services.AddScoped<IQuestionService, QuestionService>();
-        services.AddScoped<ISchoolService, SchoolService>();
+        services.AddScoped<IInstitutionService, InstitutionService>();
         services.AddScoped<IInvitationCodeService, InvitationCodeService>();
         services.AddScoped<IReportService, ReportService>();
 

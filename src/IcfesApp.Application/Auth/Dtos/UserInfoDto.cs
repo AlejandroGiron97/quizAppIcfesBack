@@ -18,5 +18,5 @@ public class UserInfoDto
     /// </summary>
     public required string Type { get; init; }
 
-    public Guid? SchoolId { get; init; }
+    public Guid? InstitutionId { get; init; }
 }

@@ -1,6 +1,6 @@
-namespace IcfesApp.Application.Schools.Dtos;
+namespace IcfesApp.Application.Institutions.Dtos;
 
-public class SchoolDto
+public class InstitutionDto
 {
     public Guid Id { get; set; }
     public required string Name { get; set; }

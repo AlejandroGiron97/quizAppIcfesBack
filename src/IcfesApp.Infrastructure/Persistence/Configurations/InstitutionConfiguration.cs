@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace IcfesApp.Infrastructure.Persistence.Configurations;
 
-public class SchoolConfiguration : IEntityTypeConfiguration<School>
+public class InstitutionConfiguration : IEntityTypeConfiguration<Institution>
 {
-    public void Configure(EntityTypeBuilder<School> builder)
+    public void Configure(EntityTypeBuilder<Institution> builder)
     {
         builder.Property(s => s.Name).IsRequired().HasMaxLength(200);
         builder.Property(s => s.Domain).HasMaxLength(150);

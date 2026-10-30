@@ -2,7 +2,12 @@ using IcfesApp.Domain.Common;
 
 namespace IcfesApp.Domain.Entities;
 
-public class School : BaseEntity
+/// <summary>
+/// A school ("colegio") that buys a yearly license. Its students and teachers are linked to it
+/// (ApplicationUser.InstitutionId) and it can generate invitation codes.
+/// Named "School" (table "Schools") before refactor phase 6.
+/// </summary>
+public class Institution : BaseEntity
 {
     public required string Name { get; set; }
 

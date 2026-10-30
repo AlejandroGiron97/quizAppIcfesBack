@@ -84,6 +84,6 @@ public class SubscriptionService(
     private Task<SubscriptionOwnerContext?> FindOwnerContextAsync(Guid userId, CancellationToken cancellationToken) =>
         dbContext.Users
             .Where(user => user.Id == userId)
-            .Select(user => new SubscriptionOwnerContext(user.Id, user.Type, user.SchoolId))
+            .Select(user => new SubscriptionOwnerContext(user.Id, user.Type, user.InstitutionId))
             .FirstOrDefaultAsync(cancellationToken);
 }

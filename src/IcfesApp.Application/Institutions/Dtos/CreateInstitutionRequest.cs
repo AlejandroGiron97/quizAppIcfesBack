@@ -1,8 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace IcfesApp.Application.Schools.Dtos;
+namespace IcfesApp.Application.Institutions.Dtos;
 
-public class CreateSchoolRequest
+public class CreateInstitutionRequest
 {
     [Required, MaxLength(200)]
     public required string Name { get; set; }

@@ -4,7 +4,7 @@
 |---|---|
 | **Branch** | `refactor` (created from `App_test`, commit `663dfaf`) |
 | **Last update** | 2026-10-30 |
-| **Status** | Phases 1 to 5 done · Phase 6 pending |
+| **Status** | All phases (1 to 6) done |
 | **Frontend** | Updated together on branch `refactor` of `QuizAppFront` — see that repo's `docs/REFACTOR.md` |
 
 This document records **every change** made during the refactoring: what changed, why, and how to use it.
@@ -78,7 +78,7 @@ Controller ──► IPracticeSessionService = SubscriptionCheckingPracticeSessi
 | **Builder** | `Domain/Builders/QuestionBuilder.cs` | A question was assembled by hand in 3 places with different rules. |
 | **Factory** | `Infrastructure/Identity/ApplicationUserFactory.cs` | `new ApplicationUser { ... }` was repeated in 6 places. |
 | **Strategy** | `Infrastructure/Content/SubscriptionOwnership/` | `SubscriptionService` had `if Particular / if Institutional` in two methods. |
-| **Template Method** | `Infrastructure/Email/Messages/` | Both auth emails had the same HTML structure written twice. |
+| **Template Method** | `Infrastructure/Email/Messages/`, `Infrastructure/Seeding/DemoSeeder.cs` | Both auth emails had the same HTML structure written twice; the 405-line `DataSeeder` mixed every entity. |
 | **Proxy (protection)** | `Infrastructure/Content/Proxies/SubscriptionCheckingPracticeSessionService.cs` | `HasActiveAccessAsync` existed but nothing enforced subscriptions. |
 | **Proxy (caching)** | `Infrastructure/Content/Proxies/CachedSubjectService.cs`, `CachedPlanService.cs` | Subjects and plans were queried on every request although they rarely change. |
 | **Base class (inheritance)** | `ApiControllerBase`, `SignInControllerBase` | `CurrentUserId` and error handling were copied into every controller. |
@@ -372,6 +372,74 @@ Service interfaces changed accordingly: `UpdateAsync` returns `Result<TDto>`.
 
 ---
 
+### Phase 6 — `School` → `Institution`, seeders split per entity, nullable `AnsweredAtUtc`
+
+#### 6.1 One name for one concept: `Institution`
+The API already said `institutions`, `InvitationCode.InstitutionId` pointed to a `School`, and the users had a `SchoolId`.
+Now everything is called **Institution**:
+
+| Before | Now |
+|---|---|
+| `School` (entity), table `Schools` | `Institution`, table `Institutions` |
+| `ApplicationUser.SchoolId` / `.School` | `ApplicationUser.InstitutionId` / `.Institution` |
+| `SchoolDto`, `CreateSchoolRequest`, `UpdateSchoolRequest`, `SchoolMappings` | `InstitutionDto`, `CreateInstitutionRequest`, `UpdateInstitutionRequest`, `InstitutionMappings` |
+| `ISchoolService` / `SchoolService`, `SchoolConfiguration` | `IInstitutionService` / `InstitutionService`, `InstitutionConfiguration` |
+| Folder `Application/Schools`, file `SchoolsController.cs` | `Application/Institutions`, `InstitutionsController.cs` |
+| `UserInfoDto.SchoolId` → JSON `schoolId` | `UserInfoDto.InstitutionId` → JSON **`institutionId`** (frontend updated) |
+
+Files were moved with `git mv`, so their history is kept.
+
+#### 6.2 Migrations (edited by hand — read this before touching them)
+`dotnet-ef` 10.0.10 was installed (`dotnet tool install --global dotnet-ef --version 10.0.10`).
+
+**EF Core cannot detect renames.** The scaffolded migration dropped the `Schools` table and created an empty `Institutions` one, which would have
+deleted every institution and, by cascade, their invitation codes and subscriptions. It was rewritten to **rename** instead:
+
+| Migration | What it does |
+|---|---|
+| `20261030195239_RenameSchoolToInstitutionAndNullableAnsweredAt` | `RenameTable(Schools → Institutions)`, `RenameColumn(AspNetUsers.SchoolId → InstitutionId)` + its index, foreign keys re-created with the new names, `StudentAnswers.AnsweredAtUtc` nullable |
+| `20261030195452_ClearAnsweredAtOfUnansweredQuestions` | Data only: `AnsweredAtUtc = NULL` where no option was selected (1,028 rows in the developer's database had the session start date as a fake "answered at") |
+
+Two SQLite details learned while testing (both explained in comments inside the migrations):
+- The `UPDATE` cannot live in the first migration: SQLite rebuilds the table **at the end** of a migration, so the column was still `NOT NULL` → second migration.
+- In `Down`, the column must be renamed **before** its index, or the pending table rebuild looks for `SchoolId` too early.
+
+Both migrations are applied automatically when the API starts (`Database.MigrateAsync()` in `Program.cs`).
+
+#### 6.3 `DataSeeder` (405 lines) split into one class per entity — Template Method
+Folder `Infrastructure/Seeding/`:
+
+```
+DemoSeeder (abstract)              SeedAsync() = if (!IsAlreadySeededAsync()) InsertDataAsync()
+ ├── InstitutionSeeder              3 institutions
+ ├── SubjectSeeder                  5 ICFES subjects
+ ├── DemoUserSeeder                 2 teachers + 5 students (checked one by one)
+ ├── InvitationCodeSeeder           3 codes
+ ├── IcfesQuestionSeeder            preguntas_icfes.json through QuestionBuilder (checked one by one, logs skipped questions)
+ ├── PracticeSessionSeeder          completed / in progress / abandoned sessions
+ ├── PlanSeeder                     4 plans
+ └── SubscriptionSeeder             2 institutional + 1 active particular + 1 expired trial
+```
+
+- `DataSeeder` (static, same entry point used by `Program.cs`) only runs them in an explicit order; seeders are created with
+  `ActivatorUtilities`, so each one declares its own dependencies (DbContext, UserManager, logger) in its constructor.
+- `DemoData` holds every demo name, email and plan code in one place (no more `"Colegio San José"` repeated in several files).
+- `DemoSeeder` offers shared lookups: `GetInstitutionIdAsync`, `GetSubjectIdAsync`, `GetPlanIdAsync`, `FindUserIdAsync`.
+- **Small demo data change:** the in-progress session of student3 now has its 5 questions (2 answered, 3 open), like a real session;
+  before it only stored the 2 answered ones.
+
+#### 6.4 Nullable `StudentAnswer.AnsweredAtUtc`
+`null` = not answered yet (it used to be `DateTime.UtcNow` from the moment the session was created). Resolves the technical debt listed in previous versions.
+
+#### 6.5 Security notes (not changed — decisions for the team) ⚠️
+- `src/IcfesApp.API/appsettings.Development.json` **is tracked by git** and contains an email username/password and the JWT secret
+  (since commit `4b668b2` and earlier). Gmail rejects that password, so it is probably old, but it stays in the git history.
+  Recommended: move those values to `dotnet user-secrets` (the project already has a `UserSecretsId`), replace them with placeholders in the file
+  and rotate the JWT secret.
+- Images with SMTP setup notes were added to `docs/` locally; one contains a real app password. They are **not committed** — keep them out of the repo.
+
+---
+
 ## 4. API behaviour changes (for the frontend)
 
 | Endpoint | Change | Breaks the frontend? |
@@ -386,6 +454,7 @@ Service interfaces changed accordingly: `UpdateAsync` returns `Result<TDto>`.
 | `POST /api/practice-sessions` | 403 without an active subscription **only if** `PracticeAccess:RequireActiveSubscription` is `true` (default `false`) | No (off by default) |
 | `GET /api/subjects`, `GET /api/plans` | Served from cache (same response) | No |
 | **Phase 5:** 9 endpoints removed, 9 renamed, `PUT` returns the updated object, history returns summaries (see 5.2–5.4) | **Yes** — the frontend was updated in the same round (branch `refactor` of `QuizAppFront`) |
+| **Phase 6:** user JSON field `schoolId` → `institutionId` (login, google-login, 2fa/verify-login, refresh-token, register-staff) | **Yes** — frontend updated in the same round |
 
 > Back and front must be deployed together from their `refactor` branches: the old frontend does not work with this backend and vice versa.
 
@@ -450,16 +519,30 @@ Manual tests against the compiled API on a separate port (`5299`) with its own d
 | Real frontend repositories against the running backend (admin + student flows, temporary test) | 2 / 2 ✅ |
 | Frontend `flutter analyze` / `flutter test` | No issues / 28 / 28 ✅ |
 
-> Emails are not actually delivered locally: Gmail rejects the SMTP credentials in `appsettings.json`
+**Phase 6**
+
+| Check | Result |
+|---|---|
+| Build | 0 errors, 0 warnings ✅ |
+| `dotnet ef migrations has-pending-model-changes` | No pending changes ✅ |
+| Migration **Up** on a copy of the real database: institutions, users ↔ institution, codes, subscriptions, answers | All identical, 0 broken foreign keys, 1,028 fake dates → 0 ✅ |
+| Migration **Down** on another copy | Database identical to the original state ✅ |
+| Real database copy migrated **automatically at API startup** + smoke test | Data identical, **74 / 74** ✅ |
+| Fresh database with the new seeders | 3 institutions, 8 users, 246 questions, 48 image options, 0 warnings ✅ |
+| Smoke test on fresh database | **74 / 74** ✅ |
+| Real frontend repositories against the backend (fresh DB and migrated real DB) | 2 / 2 and 2 / 2 ✅ |
+| Frontend `flutter analyze` / `flutter test` | No issues / 28 / 28 ✅ |
+
+> Emails are not actually delivered locally: Gmail rejects the SMTP credentials in `appsettings.Development.json`
 > (`5.7.8 Username and Password not accepted`). The API handles it as designed: it logs the error and still answers 200.
+> To make them work, store a Gmail app password with `dotnet user-secrets` (see 6.5).
 
 ---
 
 ## 6. Pending
 
-| Phase | Content | Status |
-|---|---|---|
-| 6 | Rename `School` → `Institution` (with migration) · split `DataSeeder` per entity | Pending |
+All six phases are done. Ideas for the future:
 
-**Technical debt:** `StudentAnswer.AnsweredAtUtc` gets the current date when the session is created, even before the question is answered.
-Making it nullable needs a migration, and the `dotnet-ef` tool is not installed on this machine (`dotnet tool install --global dotnet-ef`).
+- Turn on `PracticeAccess:RequireActiveSubscription` once a payment / free-trial flow creates subscriptions.
+- Move the secrets out of `appsettings.Development.json` (see 6.5).
+- Use the existing 2FA and Google sign-in endpoints from the frontend.

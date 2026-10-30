@@ -11,9 +11,9 @@ public class ApplicationUserConfiguration : IEntityTypeConfiguration<Application
         builder.Property(u => u.FirstName).IsRequired().HasMaxLength(100);
         builder.Property(u => u.LastName).IsRequired().HasMaxLength(100);
 
-        builder.HasOne(u => u.School)
+        builder.HasOne(u => u.Institution)
             .WithMany()
-            .HasForeignKey(u => u.SchoolId)
+            .HasForeignKey(u => u.InstitutionId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

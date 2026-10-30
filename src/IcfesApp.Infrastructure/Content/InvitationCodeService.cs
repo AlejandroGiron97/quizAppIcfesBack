@@ -34,8 +34,8 @@ public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitatio
         Guid? createdByUserId,
         CancellationToken cancellationToken = default)
     {
-        var institution = await dbContext.Schools
-            .FirstOrDefaultAsync(school => school.Id == request.InstitutionId, cancellationToken);
+        var institution = await dbContext.Institutions
+            .FirstOrDefaultAsync(institution => institution.Id == request.InstitutionId, cancellationToken);
 
         if (institution is null)
         {

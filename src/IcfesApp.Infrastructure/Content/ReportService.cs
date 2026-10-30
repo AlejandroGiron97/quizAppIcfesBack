@@ -18,15 +18,15 @@ public class ReportService(ApplicationDbContext dbContext) : IReportService
 
         var teacher = await dbContext.Users
             .AsNoTracking()
-            .Include(user => user.School)
+            .Include(user => user.Institution)
             .FirstOrDefaultAsync(user => user.Id == teacherId, cancellationToken);
 
-        if (teacher?.SchoolId is null)
+        if (teacher?.InstitutionId is null)
         {
             return report;
         }
 
-        report.InstitutionName = teacher.School?.Name;
+        report.InstitutionName = teacher.Institution?.Name;
 
         var studentRoleId = await dbContext.Roles
             .Where(role => role.Name == Roles.Student)
@@ -35,7 +35,7 @@ public class ReportService(ApplicationDbContext dbContext) : IReportService
 
         var studentsWithAnswerCounts = await dbContext.Users
             .AsNoTracking()
-            .Where(user => user.SchoolId == teacher.SchoolId)
+            .Where(user => user.InstitutionId == teacher.InstitutionId)
             .Where(user => dbContext.UserRoles.Any(userRole => userRole.UserId == user.Id && userRole.RoleId == studentRoleId))
             .Select(student => new
             {

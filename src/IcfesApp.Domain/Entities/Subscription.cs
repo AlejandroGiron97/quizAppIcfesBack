@@ -16,7 +16,7 @@ public class Subscription : BaseEntity
 
     /// <summary>Owning institution. Null if particular.</summary>
     public Guid? InstitutionId { get; set; }
-    public School? Institution { get; set; }
+    public Institution? Institution { get; set; }
 
     /// <summary>Plan contratado.</summary>
     public Guid PlanId { get; set; }

@@ -24,7 +24,7 @@ public class InvitationCodeConfiguration : IEntityTypeConfiguration<InvitationCo
         // Ignore the computed IsUsable property (not persisted)
         builder.Ignore(ic => ic.IsUsable);
 
-        // Relationship with Institution (School). Deleting the institution deletes its codes.
+        // Relationship with Institution. Deleting the institution deletes its codes.
         builder.HasOne(ic => ic.Institution)
             .WithMany()
             .HasForeignKey(ic => ic.InstitutionId)

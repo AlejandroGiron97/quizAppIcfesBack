@@ -8,6 +8,6 @@ public enum PlanTarget
     /// <summary>Plan for users who access individually (self-service payment).</summary>
     Particular = 0,
 
-    /// <summary>Plan for schools (yearly license, manual payment).</summary>
+    /// <summary>Plan for institutions (yearly license, manual payment).</summary>
     Institutional = 1
 }

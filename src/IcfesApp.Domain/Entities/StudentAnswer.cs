@@ -20,7 +20,8 @@ public class StudentAnswer : BaseEntity
 
     public bool IsCorrect { get; set; }
 
-    public DateTime AnsweredAtUtc { get; set; } = DateTime.UtcNow;
+    /// <summary>When the student answered. Null while the question has not been answered.</summary>
+    public DateTime? AnsweredAtUtc { get; set; }
 
     /// <summary>Not stored in the database.</summary>
     public bool IsAnswered => SelectedOptionId is not null;

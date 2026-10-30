@@ -47,7 +47,7 @@ public static class ApplicationUserFactory
         FirstName = firstName,
         LastName = lastName,
         EmailConfirmed = emailConfirmed,
-        SchoolId = institutionId,
+        InstitutionId = institutionId,
         Type = institutionId.HasValue ? UserType.Institutional : UserType.Particular
     };
 }

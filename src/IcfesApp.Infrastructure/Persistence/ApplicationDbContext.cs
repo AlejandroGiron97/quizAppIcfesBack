@@ -10,7 +10,7 @@ namespace IcfesApp.Infrastructure.Persistence;
 public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
     : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options), IApplicationDbContext
 {
-    public DbSet<School> Schools => Set<School>();
+    public DbSet<Institution> Institutions => Set<Institution>();
     public DbSet<InvitationCode> InvitationCodes => Set<InvitationCode>();
     public DbSet<Plan> Plans => Set<Plan>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
