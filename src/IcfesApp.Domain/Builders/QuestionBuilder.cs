@@ -11,6 +11,7 @@ namespace IcfesApp.Domain.Builders;
 ///   - It must have a statement and a justification.
 ///   - It must have at least <see cref="MinimumOptionCount"/> options.
 ///   - It must have exactly one correct option.
+///   - Every option must have text, an image, or both (some ICFES options are only a chart).
 ///
 /// Usage:
 /// <code>
@@ -108,9 +109,10 @@ public sealed class QuestionBuilder
             validationErrors.Add("La pregunta debe tener exactamente una opción correcta.");
         }
 
-        if (_optionDrafts.Any(optionDraft => string.IsNullOrWhiteSpace(optionDraft.Text)))
+        // An option can be just an image (e.g. "which chart is correct?"), so text OR image is enough.
+        if (_optionDrafts.Any(optionDraft => string.IsNullOrWhiteSpace(optionDraft.Text) && optionDraft.ImageUrl is null))
         {
-            validationErrors.Add("Todas las opciones deben tener texto.");
+            validationErrors.Add("Cada opción debe tener texto o imagen.");
         }
 
         return validationErrors;

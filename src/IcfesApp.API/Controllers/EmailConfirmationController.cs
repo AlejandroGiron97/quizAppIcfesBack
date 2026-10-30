@@ -17,8 +17,8 @@ public class EmailConfirmationController(IEmailConfirmationService emailConfirma
             : ToErrorResponse(confirmEmailResult);
     }
 
-    [HttpPost("resend-confirmation")]
-    public async Task<IActionResult> ResendConfirmation(ResendConfirmationRequest request, CancellationToken cancellationToken)
+    [HttpPost("resend-confirmation-email")]
+    public async Task<IActionResult> ResendConfirmationEmail(ResendConfirmationRequest request, CancellationToken cancellationToken)
     {
         await emailConfirmationService.ResendConfirmationEmailAsync(request, cancellationToken);
         return Ok(new { message = "Si el correo existe y no ha sido confirmado, se enviará un nuevo enlace." });

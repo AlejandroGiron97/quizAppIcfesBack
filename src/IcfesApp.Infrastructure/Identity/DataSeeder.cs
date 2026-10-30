@@ -7,6 +7,7 @@ using IcfesApp.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace IcfesApp.Infrastructure.Identity;
 
@@ -23,12 +24,13 @@ public static class DataSeeder
     {
         var context = serviceProvider.GetRequiredService<ApplicationDbContext>();
         var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var logger = serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(DataSeeder));
 
         var schools = await SeedSchoolsAsync(context);
         var subjects = await SeedSubjectsAsync(context);
         await SeedUsersAsync(userManager, schools);
         await SeedInvitationCodesAsync(context, schools);
-        await SeedIcfesQuestionsAsync(context, userManager, subjects);
+        await SeedIcfesQuestionsAsync(context, userManager, subjects, logger);
         await SeedPracticeSessionsAsync(context, userManager, subjects);
         var plans = await SeedPlansAsync(context);
         await SeedSubscriptionsAsync(context, plans, schools);
@@ -137,7 +139,8 @@ public static class DataSeeder
     private static async Task SeedIcfesQuestionsAsync(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
-        Dictionary<string, Subject> subjectsByName)
+        Dictionary<string, Subject> subjectsByName,
+        ILogger logger)
     {
         var adminUser = await userManager.FindByEmailAsync(RoleSeeder.DefaultAdminEmail);
         if (adminUser is null) return;
@@ -151,10 +154,12 @@ public static class DataSeeder
         if (questionSeeds is null) return;
 
         // A single query to know which questions already exist (it used to be one query per question).
+        // Both sides are trimmed: databases seeded by older versions stored the text untrimmed,
+        // and comparing trimmed with untrimmed text would insert those questions again.
         var existingQuestionKeys = (await context.Questions
                 .Select(question => new { question.SubjectId, question.Text })
                 .ToListAsync())
-            .Select(existingQuestion => (existingQuestion.SubjectId, existingQuestion.Text))
+            .Select(existingQuestion => (existingQuestion.SubjectId, existingQuestion.Text.Trim()))
             .ToHashSet();
 
         foreach (var questionSeed in questionSeeds)
@@ -177,8 +182,18 @@ public static class DataSeeder
                 questionBuilder.AddOption(optionSeed.Text, optionSeed.IsCorrect, optionSeed.ImageUrl);
             }
 
-            // A badly written question in the JSON is skipped instead of breaking startup.
-            if (questionBuilder.Validate().Count > 0) continue;
+            // A badly written question in the JSON is skipped instead of breaking startup,
+            // but it is logged so it never disappears silently.
+            var validationErrors = questionBuilder.Validate();
+            if (validationErrors.Count > 0)
+            {
+                logger.LogWarning(
+                    "Skipped seed question \"{QuestionText}\" ({Subject}): {ValidationErrors}",
+                    questionSeed.Text.Length > 80 ? questionSeed.Text[..80] + "..." : questionSeed.Text,
+                    questionSeed.Subject,
+                    string.Join(" ", validationErrors));
+                continue;
+            }
 
             context.Questions.Add(questionBuilder.Build());
         }

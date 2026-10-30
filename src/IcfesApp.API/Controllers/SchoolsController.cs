@@ -14,21 +14,12 @@ public class InstitutionsController(ISchoolService schoolService) : ApiControlle
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
         => Ok(await schoolService.GetAllAsync(cancellationToken));
 
-    [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
-    {
-        var institution = await schoolService.GetByIdAsync(id, cancellationToken);
-        return institution is null ? NotFound() : Ok(institution);
-    }
-
     [HttpPost]
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> Create(CreateSchoolRequest request, CancellationToken cancellationToken)
-    {
-        var createdInstitution = await schoolService.CreateAsync(request, cancellationToken);
-        return CreatedAtAction(nameof(GetById), new { id = createdInstitution.Id }, createdInstitution);
-    }
+        => CreatedWithBody(await schoolService.CreateAsync(request, cancellationToken));
 
+    /// <summary>Returns the updated institution so the client can update its list without reloading it.</summary>
     [HttpPut("{id:guid}")]
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> Update(Guid id, UpdateSchoolRequest request, CancellationToken cancellationToken)

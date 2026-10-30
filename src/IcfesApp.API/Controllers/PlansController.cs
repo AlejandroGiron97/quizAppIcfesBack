@@ -24,12 +24,4 @@ public class PlansController(IPlanService planService) : ApiControllerBase
         var plans = await planService.GetPlansAsync(target, canSeeInactivePlans, cancellationToken);
         return Ok(plans);
     }
-
-    [HttpGet("{id:guid}")]
-    [AllowAnonymous]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
-    {
-        var plan = await planService.GetByIdAsync(id, cancellationToken);
-        return plan is null ? NotFound() : Ok(plan);
-    }
 }

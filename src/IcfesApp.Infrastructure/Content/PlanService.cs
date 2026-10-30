@@ -33,13 +33,4 @@ public class PlanService(IApplicationDbContext dbContext) : IPlanService
 
         return plans.Select(plan => plan.ToDto()).ToList();
     }
-
-    public async Task<PlanDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        var plan = await dbContext.Plans
-            .AsNoTracking()
-            .FirstOrDefaultAsync(plan => plan.Id == id, cancellationToken);
-
-        return plan?.ToDto();
-    }
 }

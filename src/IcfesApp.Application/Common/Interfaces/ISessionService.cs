@@ -12,12 +12,12 @@ public interface ISessionService
     /// <summary>Google sign-in. If the email does not exist, the user is created as a student.</summary>
     Task<AuthResult> LoginWithGoogleAsync(string googleIdToken, CancellationToken cancellationToken = default);
 
-    /// <summary>Exchanges a valid refresh token for a new one (and a new access token).</summary>
+    /// <summary>
+    /// Exchanges a valid refresh token for a new one (and a new access token).
+    /// Also returns the up-to-date user, so the app restores its session with a single request.
+    /// </summary>
     Task<AuthResult> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default);
 
-    /// <summary>Closes the session tied to a refresh token.</summary>
+    /// <summary>Closes the session tied to a refresh token (logout).</summary>
     Task RevokeRefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default);
-
-    /// <summary>Up-to-date data of the authenticated user, read from the database.</summary>
-    Task<UserInfoDto?> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken = default);
 }

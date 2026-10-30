@@ -22,10 +22,10 @@ public class AuthTokenIssuer(
             return AuthResult.TwoFactorRequired(twoFactorChallengeToken);
         }
 
-        return await IssueTokensAsync(user, includeUser: true, cancellationToken);
+        return await IssueTokensAsync(user, cancellationToken);
     }
 
-    public async Task<AuthResult> IssueTokensAsync(ApplicationUser user, bool includeUser, CancellationToken cancellationToken)
+    public async Task<AuthResult> IssueTokensAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
         var roles = await userManager.GetRolesAsync(user);
         var (accessToken, accessTokenExpiresAtUtc) = jwtTokenService.CreateAccessToken(user.Id, user.Email!, roles, user.Type);
@@ -40,9 +40,7 @@ public class AuthTokenIssuer(
         });
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var userInfo = includeUser ? user.ToUserInfoDto(roles) : null;
-
-        return AuthResult.Success(accessToken, accessTokenExpiresAtUtc, refreshTokenValue, refreshTokenExpiresAtUtc, userInfo);
+        return AuthResult.Success(accessToken, accessTokenExpiresAtUtc, refreshTokenValue, refreshTokenExpiresAtUtc, user.ToUserInfoDto(roles));
     }
 
     public async Task<int> RevokeAllRefreshTokensAsync(Guid userId, CancellationToken cancellationToken)

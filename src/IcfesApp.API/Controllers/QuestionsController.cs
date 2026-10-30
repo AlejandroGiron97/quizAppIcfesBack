@@ -19,25 +19,11 @@ public class QuestionsController(IQuestionService questionService) : ApiControll
     public async Task<IActionResult> GetAll([FromQuery] Guid? subjectId, CancellationToken cancellationToken)
         => Ok(await questionService.GetAllAsync(subjectId, cancellationToken));
 
-    [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
-    {
-        var question = await questionService.GetByIdAsync(id, cancellationToken);
-        return question is null ? NotFound() : Ok(question);
-    }
-
     [HttpPost]
     public async Task<IActionResult> Create(CreateQuestionRequest request, CancellationToken cancellationToken)
-    {
-        var createResult = await questionService.CreateAsync(request, CurrentUserId, cancellationToken);
-        if (!createResult.Succeeded)
-        {
-            return ToErrorResponse(createResult);
-        }
+        => ToCreatedResult(await questionService.CreateAsync(request, CurrentUserId, cancellationToken));
 
-        return CreatedAtAction(nameof(GetById), new { id = createResult.Value!.Id }, createResult.Value);
-    }
-
+    /// <summary>Returns the updated question so the client can update its list without reloading it.</summary>
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, UpdateQuestionRequest request, CancellationToken cancellationToken)
         => ToActionResult(await questionService.UpdateAsync(id, request, cancellationToken));

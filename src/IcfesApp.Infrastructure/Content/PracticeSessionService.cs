@@ -48,21 +48,41 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
         return Result<PracticeSessionDto>.Success(session.ToDto());
     }
 
-    public async Task<PracticeSessionDto?> GetByIdAsync(Guid id, Guid studentUserId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<PracticeSessionSummaryDto>> GetHistoryAsync(Guid studentUserId, CancellationToken cancellationToken = default)
     {
-        var session = await FindStudentSessionAsync(id, studentUserId, cancellationToken);
-        return session?.ToDto();
-    }
-
-    public async Task<IReadOnlyList<PracticeSessionDto>> GetMineAsync(Guid studentUserId, CancellationToken cancellationToken = default)
-    {
-        var studentSessions = await SessionsWithQuestions()
+        // The counts are computed by the database: no question or option is loaded.
+        var sessionSummaries = await dbContext.PracticeSessions
             .AsNoTracking()
             .Where(session => session.StudentUserId == studentUserId)
             .OrderByDescending(session => session.StartedAtUtc)
+            .Select(session => new
+            {
+                session.Id,
+                session.SubjectId,
+                SubjectName = session.Subject.Name,
+                session.Status,
+                session.StartedAtUtc,
+                session.FinishedAtUtc,
+                TotalQuestions = session.Answers.Count,
+                AnsweredQuestions = session.Answers.Count(answer => answer.SelectedOptionId != null),
+                CorrectAnswers = session.Answers.Count(answer => answer.IsCorrect)
+            })
             .ToListAsync(cancellationToken);
 
-        return studentSessions.Select(session => session.ToDto()).ToList();
+        return sessionSummaries
+            .Select(sessionSummary => new PracticeSessionSummaryDto
+            {
+                Id = sessionSummary.Id,
+                SubjectId = sessionSummary.SubjectId,
+                SubjectName = sessionSummary.SubjectName,
+                Status = sessionSummary.Status.ToString(),
+                StartedAtUtc = sessionSummary.StartedAtUtc,
+                FinishedAtUtc = sessionSummary.FinishedAtUtc,
+                TotalQuestions = sessionSummary.TotalQuestions,
+                AnsweredQuestions = sessionSummary.AnsweredQuestions,
+                CorrectAnswers = sessionSummary.CorrectAnswers
+            })
+            .ToList();
     }
 
     public async Task<Result<AnswerResultDto>> SubmitAnswerAsync(Guid sessionId, SubmitAnswerRequest request, Guid studentUserId, CancellationToken cancellationToken = default)

@@ -33,9 +33,9 @@ public class TwoFactorController(ITwoFactorService twoFactorService) : SignInCon
         => ToActionResult(await twoFactorService.DisableAsync(CurrentUserId, request.Code, cancellationToken));
 
     /// <summary>Second sign-in step when the user has 2FA enabled.</summary>
-    [HttpPost("verify")]
+    [HttpPost("verify-login")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> Verify(TwoFactorLoginRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> VerifyLogin(TwoFactorLoginRequest request, CancellationToken cancellationToken)
         => ToSignInResponse(await twoFactorService.VerifyLoginAsync(request.TwoFactorToken, request.Code, cancellationToken));
 }

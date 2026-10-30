@@ -19,15 +19,6 @@ public class SchoolService(IApplicationDbContext dbContext) : ISchoolService
         return schools.Select(school => school.ToDto()).ToList();
     }
 
-    public async Task<SchoolDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        var school = await dbContext.Schools
-            .AsNoTracking()
-            .FirstOrDefaultAsync(school => school.Id == id, cancellationToken);
-
-        return school?.ToDto();
-    }
-
     public async Task<SchoolDto> CreateAsync(CreateSchoolRequest request, CancellationToken cancellationToken = default)
     {
         var school = new School
@@ -44,12 +35,12 @@ public class SchoolService(IApplicationDbContext dbContext) : ISchoolService
         return school.ToDto();
     }
 
-    public async Task<Result> UpdateAsync(Guid id, UpdateSchoolRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result<SchoolDto>> UpdateAsync(Guid id, UpdateSchoolRequest request, CancellationToken cancellationToken = default)
     {
         var school = await dbContext.Schools.FirstOrDefaultAsync(school => school.Id == id, cancellationToken);
         if (school is null)
         {
-            return Result.NotFound();
+            return Result<SchoolDto>.NotFound();
         }
 
         school.Name = request.Name;
@@ -59,7 +50,7 @@ public class SchoolService(IApplicationDbContext dbContext) : ISchoolService
         school.UpdatedAtUtc = DateTime.UtcNow;
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Result.Success();
+        return Result<SchoolDto>.Success(school.ToDto());
     }
 
     public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)

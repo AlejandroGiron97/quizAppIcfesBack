@@ -19,15 +19,6 @@ public class SubjectService(IApplicationDbContext dbContext) : ISubjectService
         return subjects.Select(subject => subject.ToDto()).ToList();
     }
 
-    public async Task<SubjectDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        var subject = await dbContext.Subjects
-            .AsNoTracking()
-            .FirstOrDefaultAsync(subject => subject.Id == id, cancellationToken);
-
-        return subject?.ToDto();
-    }
-
     public async Task<SubjectDto> CreateAsync(CreateSubjectRequest request, CancellationToken cancellationToken = default)
     {
         var subject = new Subject { Name = request.Name, Description = request.Description };
@@ -38,12 +29,12 @@ public class SubjectService(IApplicationDbContext dbContext) : ISubjectService
         return subject.ToDto();
     }
 
-    public async Task<Result> UpdateAsync(Guid id, UpdateSubjectRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result<SubjectDto>> UpdateAsync(Guid id, UpdateSubjectRequest request, CancellationToken cancellationToken = default)
     {
         var subject = await dbContext.Subjects.FirstOrDefaultAsync(subject => subject.Id == id, cancellationToken);
         if (subject is null)
         {
-            return Result.NotFound();
+            return Result<SubjectDto>.NotFound();
         }
 
         subject.Name = request.Name;
@@ -51,7 +42,7 @@ public class SubjectService(IApplicationDbContext dbContext) : ISubjectService
         subject.UpdatedAtUtc = DateTime.UtcNow;
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Result.Success();
+        return Result<SubjectDto>.Success(subject.ToDto());
     }
 
     public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)

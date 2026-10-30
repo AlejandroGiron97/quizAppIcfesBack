@@ -20,10 +20,10 @@ public class AuthController(
     // ─────────────────────────────────────────────────────────────
 
     /// <summary>Public sign-up. Always creates a user with the Student role.</summary>
-    [HttpPost("register")]
+    [HttpPost("register-student")]
     [ProducesResponseType(typeof(RegistrationPendingResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Register(RegisterRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> RegisterStudent(RegisterRequest request, CancellationToken cancellationToken)
     {
         var registrationResult = await registrationService.RegisterStudentAsync(request, cancellationToken);
         if (!registrationResult.Succeeded)
@@ -61,7 +61,7 @@ public class AuthController(
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
         => ToSignInResponse(await sessionService.LoginAsync(request, cancellationToken));
 
-    [HttpPost("google")]
+    [HttpPost("google-login")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(TwoFactorRequiredResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -69,43 +69,18 @@ public class AuthController(
         => ToSignInResponse(await sessionService.LoginWithGoogleAsync(request.IdToken, cancellationToken));
 
     /// <summary>
-    /// Returns the up-to-date data of the authenticated user (read from the database).
-    /// Used when the app reloads to get fresh state without rotating tokens.
+    /// Exchanges the refresh token for new tokens and returns the up-to-date user as well.
+    /// When the app reloads, this single call restores the whole session (it replaces the old GET /session).
     /// </summary>
-    [HttpGet("session")]
-    [Authorize]
-    [ProducesResponseType(typeof(UserInfoDto), StatusCodes.Status200OK)]
+    [HttpPost("refresh-token")]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> Session(CancellationToken cancellationToken)
-    {
-        var currentUser = await sessionService.GetCurrentUserAsync(CurrentUserId, cancellationToken);
-        return currentUser is null ? Unauthorized() : Ok(currentUser);
-    }
+    public async Task<IActionResult> RefreshToken(RefreshRequest request, CancellationToken cancellationToken)
+        => ToSignInResponse(await sessionService.RefreshAsync(request.RefreshToken, cancellationToken));
 
-    [HttpPost("refresh")]
-    [ProducesResponseType(typeof(AuthSessionResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> Refresh(RefreshRequest request, CancellationToken cancellationToken)
-    {
-        var refreshResult = await sessionService.RefreshAsync(request.RefreshToken, cancellationToken);
-        if (!refreshResult.Succeeded)
-        {
-            return ToErrorResponse(refreshResult);
-        }
-
-        return Ok(new AuthSessionResponse
-        {
-            TokenType = BearerTokenType,
-            AccessToken = refreshResult.AccessToken!,
-            ExpiresAtUtc = refreshResult.AccessTokenExpiresAtUtc!.Value,
-            RefreshToken = refreshResult.RefreshToken!,
-            RefreshTokenExpiresAtUtc = refreshResult.RefreshTokenExpiresAtUtc!.Value
-        });
-    }
-
-    [HttpPost("revoke")]
+    [HttpPost("logout")]
     [Authorize]
-    public async Task<IActionResult> Revoke(RefreshRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> Logout(RefreshRequest request, CancellationToken cancellationToken)
     {
         await sessionService.RevokeRefreshTokenAsync(request.RefreshToken, cancellationToken);
         return NoContent();

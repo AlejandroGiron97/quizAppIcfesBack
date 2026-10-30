@@ -41,11 +41,8 @@ public class SubscriptionCheckingPracticeSessionService(
         return await realPracticeSessionService.StartAsync(request, studentUserId, cancellationToken);
     }
 
-    public Task<PracticeSessionDto?> GetByIdAsync(Guid id, Guid studentUserId, CancellationToken cancellationToken = default) =>
-        realPracticeSessionService.GetByIdAsync(id, studentUserId, cancellationToken);
-
-    public Task<IReadOnlyList<PracticeSessionDto>> GetMineAsync(Guid studentUserId, CancellationToken cancellationToken = default) =>
-        realPracticeSessionService.GetMineAsync(studentUserId, cancellationToken);
+    public Task<IReadOnlyList<PracticeSessionSummaryDto>> GetHistoryAsync(Guid studentUserId, CancellationToken cancellationToken = default) =>
+        realPracticeSessionService.GetHistoryAsync(studentUserId, cancellationToken);
 
     public Task<Result<AnswerResultDto>> SubmitAnswerAsync(Guid sessionId, SubmitAnswerRequest request, Guid studentUserId, CancellationToken cancellationToken = default) =>
         realPracticeSessionService.SubmitAnswerAsync(sessionId, request, studentUserId, cancellationToken);

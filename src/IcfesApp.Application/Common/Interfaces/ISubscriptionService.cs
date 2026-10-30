@@ -1,4 +1,4 @@
-﻿using IcfesApp.Application.Subscriptions.Dtos;
+using IcfesApp.Application.Subscriptions.Dtos;
 
 namespace IcfesApp.Application.Common.Interfaces;
 
@@ -9,11 +9,10 @@ public interface ISubscriptionService
     /// - Particular: their own.
     /// - Institutional: their institution's.
     /// </summary>
-    Task<SubscriptionDto?> GetMineAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<SubscriptionDto?> GetForUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
-    Task<SubscriptionDto?> GetForInstitutionAsync(Guid institutionId, CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyList<SubscriptionDto>> GetAllAsync(CancellationToken cancellationToken = default);
+    /// <summary>Every subscription, newest first. Optionally only the ones of one institution.</summary>
+    Task<IReadOnlyList<SubscriptionDto>> GetAllAsync(Guid? institutionId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns true if the user has active access (their own or through their institution).

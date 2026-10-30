@@ -31,13 +31,6 @@ public class CachedSubjectService(ISubjectService realSubjectService, IMemoryCac
         return cachedSubjects ?? [];
     }
 
-    /// <summary>Served from the cached list, so no extra cache entry per subject is needed.</summary>
-    public async Task<SubjectDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        var allSubjects = await GetAllAsync(cancellationToken);
-        return allSubjects.FirstOrDefault(subject => subject.Id == id);
-    }
-
     public async Task<SubjectDto> CreateAsync(CreateSubjectRequest request, CancellationToken cancellationToken = default)
     {
         var createdSubject = await realSubjectService.CreateAsync(request, cancellationToken);
@@ -45,7 +38,7 @@ public class CachedSubjectService(ISubjectService realSubjectService, IMemoryCac
         return createdSubject;
     }
 
-    public async Task<Result> UpdateAsync(Guid id, UpdateSubjectRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result<SubjectDto>> UpdateAsync(Guid id, UpdateSubjectRequest request, CancellationToken cancellationToken = default)
     {
         var updateResult = await realSubjectService.UpdateAsync(id, request, cancellationToken);
         ClearCache();

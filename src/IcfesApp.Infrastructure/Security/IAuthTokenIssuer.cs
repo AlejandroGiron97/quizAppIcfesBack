@@ -16,9 +16,8 @@ public interface IAuthTokenIssuer
     /// </summary>
     Task<AuthResult> CompleteSignInAsync(ApplicationUser user, CancellationToken cancellationToken);
 
-    /// <summary>Creates a new access token and refresh token for the user.</summary>
-    /// <param name="includeUser">Whether the response must include the user data (not needed when refreshing).</param>
-    Task<AuthResult> IssueTokensAsync(ApplicationUser user, bool includeUser, CancellationToken cancellationToken);
+    /// <summary>Creates a new access token and refresh token for the user. The result always includes the user data.</summary>
+    Task<AuthResult> IssueTokensAsync(ApplicationUser user, CancellationToken cancellationToken);
 
     /// <summary>Closes every session of the user. Returns how many refresh tokens were revoked.</summary>
     Task<int> RevokeAllRefreshTokensAsync(Guid userId, CancellationToken cancellationToken);

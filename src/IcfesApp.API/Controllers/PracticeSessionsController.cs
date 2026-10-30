@@ -9,29 +9,15 @@ namespace IcfesApp.API.Controllers;
 [Authorize]
 public class PracticeSessionsController(IPracticeSessionService practiceSessionService) : ApiControllerBase
 {
+    /// <summary>Starts a session with random questions of a subject. Returns the questions and options (never the answers).</summary>
     [HttpPost]
     public async Task<IActionResult> Start(StartPracticeSessionRequest request, CancellationToken cancellationToken)
-    {
-        var startResult = await practiceSessionService.StartAsync(request, CurrentUserId, cancellationToken);
-        if (!startResult.Succeeded)
-        {
-            return ToErrorResponse(startResult);
-        }
+        => ToCreatedResult(await practiceSessionService.StartAsync(request, CurrentUserId, cancellationToken));
 
-        return CreatedAtAction(nameof(GetById), new { id = startResult.Value!.Id }, startResult.Value);
-    }
-
-    /// <summary>Sessions of the authenticated student, newest first.</summary>
-    [HttpGet]
-    public async Task<IActionResult> GetMine(CancellationToken cancellationToken)
-        => Ok(await practiceSessionService.GetMineAsync(CurrentUserId, cancellationToken));
-
-    [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
-    {
-        var session = await practiceSessionService.GetByIdAsync(id, CurrentUserId, cancellationToken);
-        return session is null ? NotFound() : Ok(session);
-    }
+    /// <summary>Practice history of the authenticated student (summaries with counts, no questions), newest first.</summary>
+    [HttpGet("history")]
+    public async Task<IActionResult> GetHistory(CancellationToken cancellationToken)
+        => Ok(await practiceSessionService.GetHistoryAsync(CurrentUserId, cancellationToken));
 
     [HttpPost("{id:guid}/answers")]
     public async Task<IActionResult> SubmitAnswer(Guid id, SubmitAnswerRequest request, CancellationToken cancellationToken)

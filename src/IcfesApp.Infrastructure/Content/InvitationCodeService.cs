@@ -29,16 +29,6 @@ public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitatio
         return invitationCodes.Select(invitationCode => invitationCode.ToDto()).ToList();
     }
 
-    public async Task<InvitationCodeDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        var invitationCode = await dbContext.InvitationCodes
-            .AsNoTracking()
-            .Include(invitationCode => invitationCode.Institution)
-            .FirstOrDefaultAsync(invitationCode => invitationCode.Id == id, cancellationToken);
-
-        return invitationCode?.ToDto();
-    }
-
     public async Task<Result<InvitationCodeDto>> CreateAsync(
         CreateInvitationCodeRequest request,
         Guid? createdByUserId,
@@ -92,24 +82,28 @@ public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitatio
         return Result<InvitationCodeDto>.Success(newInvitationCode.ToDto());
     }
 
-    public async Task<Result> UpdateAsync(Guid id, UpdateInvitationCodeRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result<InvitationCodeDto>> UpdateAsync(Guid id, UpdateInvitationCodeRequest request, CancellationToken cancellationToken = default)
     {
         var invitationCode = await dbContext.InvitationCodes
+            .Include(invitationCode => invitationCode.Institution)
             .FirstOrDefaultAsync(invitationCode => invitationCode.Id == id, cancellationToken);
 
         if (invitationCode is null)
         {
-            return Result.NotFound();
+            return Result<InvitationCodeDto>.NotFound();
         }
 
         if (request.MaxUses != UnlimitedUses && request.MaxUses < invitationCode.Uses)
         {
-            return Result.Failed([$"MaxUses no puede ser menor a los usos ya realizados ({invitationCode.Uses})."]);
+            return Result<InvitationCodeDto>.Failed([$"MaxUses no puede ser menor a los usos ya realizados ({invitationCode.Uses})."]);
         }
 
-        if (request.ExpiresAtUtc.HasValue && request.ExpiresAtUtc.Value <= DateTime.UtcNow)
+        // Only a NEW expiration date must be in the future. Keeping the current one is always allowed,
+        // so an already expired code can still be revoked (IsActive = false) without touching its date.
+        var expirationChanged = request.ExpiresAtUtc != invitationCode.ExpiresAtUtc;
+        if (expirationChanged && request.ExpiresAtUtc.HasValue && request.ExpiresAtUtc.Value <= DateTime.UtcNow)
         {
-            return Result.Failed(["La fecha de expiración debe ser futura."]);
+            return Result<InvitationCodeDto>.Failed(["La fecha de expiración debe ser futura."]);
         }
 
         invitationCode.MaxUses = request.MaxUses;
@@ -118,24 +112,7 @@ public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitatio
         invitationCode.UpdatedAtUtc = DateTime.UtcNow;
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Result.Success();
-    }
-
-    public async Task<Result> RevokeAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        var invitationCode = await dbContext.InvitationCodes
-            .FirstOrDefaultAsync(invitationCode => invitationCode.Id == id, cancellationToken);
-
-        if (invitationCode is null)
-        {
-            return Result.NotFound();
-        }
-
-        invitationCode.IsActive = false;
-        invitationCode.UpdatedAtUtc = DateTime.UtcNow;
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return Result.Success();
+        return Result<InvitationCodeDto>.Success(invitationCode.ToDto());
     }
 
     public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)

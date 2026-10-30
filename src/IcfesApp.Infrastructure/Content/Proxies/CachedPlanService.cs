@@ -34,10 +34,4 @@ public class CachedPlanService(IPlanService realPlanService, IMemoryCache memory
 
         return cachedPlans ?? [];
     }
-
-    public async Task<PlanDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        var allPlans = await GetPlansAsync(target: null, includeInactive: true, cancellationToken);
-        return allPlans.FirstOrDefault(plan => plan.Id == id);
-    }
 }

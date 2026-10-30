@@ -104,8 +104,9 @@ public class SessionService(
         }
 
         // Rotation: the used refresh token is revoked and a new one is issued (both are saved together).
+        // The response includes the user too, so the app can restore its session with this single request.
         storedRefreshToken.RevokedAtUtc = DateTime.UtcNow;
-        return await authTokenIssuer.IssueTokensAsync(user, includeUser: false, cancellationToken);
+        return await authTokenIssuer.IssueTokensAsync(user, cancellationToken);
     }
 
     public async Task RevokeRefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default)
@@ -118,17 +119,5 @@ public class SessionService(
             storedRefreshToken.RevokedAtUtc = DateTime.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-    }
-
-    public async Task<UserInfoDto?> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        var user = await userManager.FindByIdAsync(userId.ToString());
-        if (user is null)
-        {
-            return null;
-        }
-
-        var roles = await userManager.GetRolesAsync(user);
-        return user.ToUserInfoDto(roles);
     }
 }

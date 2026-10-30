@@ -14,21 +14,12 @@ public class SubjectsController(ISubjectService subjectService) : ApiControllerB
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
         => Ok(await subjectService.GetAllAsync(cancellationToken));
 
-    [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
-    {
-        var subject = await subjectService.GetByIdAsync(id, cancellationToken);
-        return subject is null ? NotFound() : Ok(subject);
-    }
-
     [HttpPost]
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> Create(CreateSubjectRequest request, CancellationToken cancellationToken)
-    {
-        var createdSubject = await subjectService.CreateAsync(request, cancellationToken);
-        return CreatedAtAction(nameof(GetById), new { id = createdSubject.Id }, createdSubject);
-    }
+        => CreatedWithBody(await subjectService.CreateAsync(request, cancellationToken));
 
+    /// <summary>Returns the updated subject so the client can update its list without reloading it.</summary>
     [HttpPut("{id:guid}")]
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> Update(Guid id, UpdateSubjectRequest request, CancellationToken cancellationToken)

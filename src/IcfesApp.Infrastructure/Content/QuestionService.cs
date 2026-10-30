@@ -32,17 +32,6 @@ public class QuestionService(IApplicationDbContext dbContext) : IQuestionService
         return questions.Select(question => question.ToDto()).ToList();
     }
 
-    public async Task<QuestionDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        var question = await dbContext.Questions
-            .AsNoTracking()
-            .Include(question => question.Subject)
-            .Include(question => question.Options)
-            .FirstOrDefaultAsync(question => question.Id == id, cancellationToken);
-
-        return question?.ToDto();
-    }
-
     public async Task<Result<QuestionDto>> CreateAsync(CreateQuestionRequest request, Guid createdByUserId, CancellationToken cancellationToken = default)
     {
         var questionBuilder = CreateBuilderFrom(request).CreatedBy(createdByUserId);
@@ -67,14 +56,14 @@ public class QuestionService(IApplicationDbContext dbContext) : IQuestionService
         return Result<QuestionDto>.Success(question.ToDto());
     }
 
-    public async Task<Result> UpdateAsync(Guid id, UpdateQuestionRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result<QuestionDto>> UpdateAsync(Guid id, UpdateQuestionRequest request, CancellationToken cancellationToken = default)
     {
         var questionBuilder = CreateBuilderFrom(request);
 
         var validationErrors = questionBuilder.Validate();
         if (validationErrors.Count > 0)
         {
-            return Result.Failed(validationErrors);
+            return Result<QuestionDto>.Failed(validationErrors);
         }
 
         var existingQuestion = await dbContext.Questions
@@ -83,13 +72,13 @@ public class QuestionService(IApplicationDbContext dbContext) : IQuestionService
 
         if (existingQuestion is null)
         {
-            return Result.NotFound();
+            return Result<QuestionDto>.NotFound();
         }
 
-        var subjectExists = await dbContext.Subjects.AnyAsync(subject => subject.Id == request.SubjectId, cancellationToken);
-        if (!subjectExists)
+        var subject = await dbContext.Subjects.FirstOrDefaultAsync(subject => subject.Id == request.SubjectId, cancellationToken);
+        if (subject is null)
         {
-            return Result.Failed([SubjectNotFoundMessage]);
+            return Result<QuestionDto>.Failed([SubjectNotFoundMessage]);
         }
 
         existingQuestion.Text = request.Text.Trim();
@@ -97,13 +86,14 @@ public class QuestionService(IApplicationDbContext dbContext) : IQuestionService
         existingQuestion.Justification = request.Justification.Trim();
         existingQuestion.JustificationImageUrl = request.JustificationImageUrl;
         existingQuestion.Difficulty = request.Difficulty;
-        existingQuestion.SubjectId = request.SubjectId;
+        existingQuestion.SubjectId = subject.Id;
+        existingQuestion.Subject = subject;
         existingQuestion.UpdatedAtUtc = DateTime.UtcNow;
 
         ReplaceOptions(existingQuestion, questionBuilder.BuildOptionsFor(existingQuestion.Id));
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Result.Success();
+        return Result<QuestionDto>.Success(existingQuestion.ToDto());
     }
 
     public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)

@@ -1,9 +1,8 @@
 ﻿namespace IcfesApp.Application.Auth.Dtos;
 
 /// <summary>
-/// Response of the endpoints that issue a full session (login, 2fa/verify,
-/// google). Every field is required: the client can
-/// rely on them being present.
+/// Response of every endpoint that issues a session: login, google-login, 2fa/verify-login and refresh-token.
+/// Every field is required: the client can rely on them being present.
 /// </summary>
 public class AuthResponse
 {

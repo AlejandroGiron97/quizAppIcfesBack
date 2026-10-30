@@ -1,4 +1,4 @@
-﻿using IcfesApp.Application.Plans.Dtos;
+using IcfesApp.Application.Plans.Dtos;
 
 namespace IcfesApp.Application.Common.Interfaces;
 
@@ -8,6 +8,4 @@ public interface IPlanService
         string? target = null,
         bool includeInactive = false,
         CancellationToken cancellationToken = default);
-
-    Task<PlanDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 }

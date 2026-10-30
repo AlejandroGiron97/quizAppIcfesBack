@@ -4,7 +4,8 @@
 |---|---|
 | **Branch** | `refactor` (created from `App_test`, commit `663dfaf`) |
 | **Last update** | 2026-10-30 |
-| **Status** | Phases 1 to 4 done · Phases 5 and 6 pending |
+| **Status** | Phases 1 to 5 done · Phase 6 pending |
+| **Frontend** | Updated together on branch `refactor` of `QuizAppFront` — see that repo's `docs/REFACTOR.md` |
 
 This document records **every change** made during the refactoring: what changed, why, and how to use it.
 It is meant for a developer joining the project, so they can understand the structure without reading all the code.
@@ -46,10 +47,10 @@ IcfesApp.Domain          → Entities, enums, constants and QuestionBuilder. Dep
 ControllerBase (ASP.NET)
  └── ApiControllerBase                 CurrentUserId + Result → HTTP
       ├── SignInControllerBase         Common sign-in response (tokens / 2FA required)
-      │    ├── AuthController          register, register-staff, login, google, session, refresh, revoke
-      │    └── TwoFactorController     2fa/setup, 2fa/enable, 2fa/disable, 2fa/verify
+      │    ├── AuthController          register-student, register-staff, login, google-login, refresh-token, logout
+      │    └── TwoFactorController     2fa/setup, 2fa/enable, 2fa/disable, 2fa/verify-login
       ├── PasswordController           forgot-password, reset-password, change-password
-      ├── EmailConfirmationController  confirm-email, resend-confirmation
+      ├── EmailConfirmationController  confirm-email, resend-confirmation-email
       └── QuestionsController, PracticeSessionsController, SubjectsController, InstitutionsController,
           InvitationCodesController, PlansController, SubscriptionsController, ReportsController
 
@@ -87,7 +88,7 @@ Controller ──► IPracticeSessionService = SubscriptionCheckingPracticeSessi
 | Interface | Implementation | Responsibility |
 |---|---|---|
 | `IRegistrationService` | `RegistrationService` | Student sign-up and staff creation |
-| `ISessionService` | `SessionService` | Login, Google login, refresh, revoke, current user |
+| `ISessionService` | `SessionService` | Login, Google login, refresh token (returns the user), logout |
 | `IPasswordService` | `PasswordService` | Forgot / reset / change password |
 | `IEmailConfirmationService` | `EmailConfirmationService` | Confirm email, resend link |
 | `ITwoFactorService` | `TwoFactorService` | 2FA setup, enable, disable, verify login |
@@ -312,6 +313,65 @@ constructor, and register it with `AddWithProxy`.
 
 ---
 
+### Phase 5 — Clear endpoint names, fewer endpoints (48 → 39)
+
+Done together with the frontend (branch `refactor` of `QuizAppFront`, documented in that repo's own `docs/REFACTOR.md`).
+
+#### 5.1 Why
+- The admin panel downloaded its 5 lists on load **and again after every create / update / delete**
+  (e.g. renaming a subject re-downloaded 234+ questions with all their options). The data looked "repeated" because of that, not because endpoints overlapped.
+- On startup the app called `/refresh` and then `/session` only to get the user.
+- The practice history downloaded every question and option of every session, while the screen only shows counts.
+- 9 endpoints were never called by the frontend or duplicated another one.
+
+#### 5.2 Removed endpoints (9)
+
+| Removed | Use instead |
+|---|---|
+| `GET /api/subjects/{id}`, `/api/institutions/{id}`, `/api/questions/{id}`, `/api/invitation-codes/{id}`, `/api/plans/{id}`, `/api/practice-sessions/{id}` | The list endpoint (it already has the same data) |
+| `GET /api/auth/session` | `POST /api/auth/refresh-token` now also returns the user |
+| `POST /api/invitation-codes/{id}/revoke` | `PUT /api/invitation-codes/{id}` with `isActive: false` |
+| `GET /api/subscriptions/institution/{id}` | `GET /api/subscriptions?institutionId={id}` |
+
+Create endpoints keep answering **201** with the created resource in the body (`ApiControllerBase.ToCreatedResult` / `CreatedWithBody`); they no longer point to a "get by id" route.
+
+#### 5.3 Renamed endpoints
+
+| Before | Now |
+|---|---|
+| `POST /api/auth/register` | `POST /api/auth/register-student` |
+| `POST /api/auth/refresh` | `POST /api/auth/refresh-token` (returns tokens **and user**, same shape as login) |
+| `POST /api/auth/revoke` | `POST /api/auth/logout` |
+| `POST /api/auth/google` | `POST /api/auth/google-login` |
+| `POST /api/auth/resend-confirmation` | `POST /api/auth/resend-confirmation-email` |
+| `POST /api/auth/2fa/verify` | `POST /api/auth/2fa/verify-login` |
+| `GET /api/practice-sessions` | `GET /api/practice-sessions/history` (summaries: `totalQuestions`, `answeredQuestions`, `correctAnswers`) |
+| `GET /api/subscriptions/current` | `GET /api/subscriptions/current-user` |
+| `GET /api/reports/students` | `GET /api/reports/student-performance` |
+
+#### 5.4 Updates return the updated resource
+`PUT /api/subjects/{id}`, `/api/institutions/{id}`, `/api/questions/{id}` and `/api/invitation-codes/{id}` now answer
+**200 with the updated object** instead of 204. The frontend replaces that one item in its list instead of reloading everything.
+Service interfaces changed accordingly: `UpdateAsync` returns `Result<TDto>`.
+
+#### 5.5 Other code changes
+- `IAuthTokenIssuer.IssueTokensAsync` lost its `includeUser` flag: every session response includes the user now.
+- `AuthSessionResponse` deleted (refresh uses `AuthResponse`, like login). `ISessionService.GetCurrentUserAsync` deleted.
+- `PracticeSessionSummaryDto` added; the history counts are computed by the database (no questions loaded).
+- `ISubscriptionService`: `GetMineAsync` → `GetForUserAsync`; `GetForInstitutionAsync` merged into `GetAllAsync(institutionId)`.
+- Invitation code update: only a **new** expiration date must be in the future, so an already expired code can still be revoked.
+
+#### 5.6 Bugs found while verifying 🐞
+- **Image-only options were rejected (introduced in phase 2).** `QuestionBuilder` required text in every option, but 12 ICFES questions
+  have options that are only a chart (`text: ""` + `imageUrl`). The seeder silently skipped them, so a **new** database had 234 questions instead of 246
+  (the developer's existing database was seeded with the old code and was not affected).
+  Now the rule is **"every option must have text or an image"**, `CreateQuestionOptionRequest.Text` accepts an empty string, and the seeder
+  **logs a warning** for any question it skips instead of dropping it silently.
+- **Possible duplicated questions on existing databases.** The seeder compared the trimmed JSON text with the stored text; databases seeded by older
+  versions stored it untrimmed. Both sides are trimmed now.
+
+---
+
 ## 4. API behaviour changes (for the frontend)
 
 | Endpoint | Change | Breaks the frontend? |
@@ -325,8 +385,9 @@ constructor, and register it with `AddWithProxy`.
 | `POST /api/auth/2fa/verify` with malformed token | 401 (was 500) | No |
 | `POST /api/practice-sessions` | 403 without an active subscription **only if** `PracticeAccess:RequireActiveSubscription` is `true` (default `false`) | No (off by default) |
 | `GET /api/subjects`, `GET /api/plans` | Served from cache (same response) | No |
+| **Phase 5:** 9 endpoints removed, 9 renamed, `PUT` returns the updated object, history returns summaries (see 5.2–5.4) | **Yes** — the frontend was updated in the same round (branch `refactor` of `QuizAppFront`) |
 
-**No endpoint has been renamed yet** (that is phase 5).
+> Back and front must be deployed together from their `refactor` branches: the old frontend does not work with this backend and vice versa.
 
 ---
 
@@ -342,7 +403,7 @@ Manual tests against the compiled API on a separate port (`5299`) with its own d
 | 1 | Login with wrong password | 401 ✅ |
 | 2 | `/api/auth/session` as a student | Returns name, last name and `schoolId` ✅ |
 | 3 | Student calls `/api/questions` | 403 ✅ |
-| 4 | Teacher calls `/api/questions` | 234 questions, 70 with images ✅ |
+| 4 | Teacher calls `/api/questions` | 234 questions, 70 with images ✅ *(should have been 246 — bug found in phase 5, see 5.6)* |
 | 5 | Create question with no correct option | 400 with the builder message ✅ |
 | 6–8 | Create (with images), update, delete question | Images saved; 204; 204 ✅ |
 | 9–12 | Start / answer / answer finished session / finish missing session | Correct; 400; 404 ✅ |
@@ -377,6 +438,18 @@ Manual tests against the compiled API on a separate port (`5299`) with its own d
 | 9 | 3 × `GET /api/plans?target=Particular` | 1 SQL query ✅ |
 | 10 | Plans by filter and by id | 3 particular / 4 total / by id ✅ |
 
+**Phase 5** — from now on every change is verified with the same complete checks:
+
+| Check | Result |
+|---|---|
+| Build | 0 errors, 0 warnings ✅ |
+| Smoke test of **every** endpoint (roles, status codes, response content) + the 18 old routes must answer 404/405 | **74 / 74** ✅ |
+| **Fresh database**: seeded questions vs JSON | 246 / 246, 48 image options, 0 seeder warnings ✅ |
+| **Copy of the developer's real database** (original untouched): no duplicates after startup | 247 questions, 8 users, 27 sessions — unchanged, 0 duplicates ✅ |
+| Smoke test on the copy of the real database | 74 / 74 ✅ |
+| Real frontend repositories against the running backend (admin + student flows, temporary test) | 2 / 2 ✅ |
+| Frontend `flutter analyze` / `flutter test` | No issues / 28 / 28 ✅ |
+
 > Emails are not actually delivered locally: Gmail rejects the SMTP credentials in `appsettings.json`
 > (`5.7.8 Username and Password not accepted`). The API handles it as designed: it logs the error and still answers 200.
 
@@ -386,7 +459,6 @@ Manual tests against the compiled API on a separate port (`5299`) with its own d
 
 | Phase | Content | Status |
 |---|---|---|
-| 5 | Rename endpoints to clear names and remove duplicates (requires frontend changes) | Pending |
 | 6 | Rename `School` → `Institution` (with migration) · split `DataSeeder` per entity | Pending |
 
 **Technical debt:** `StudentAnswer.AnsweredAtUtc` gets the current date when the session is created, even before the question is answered.

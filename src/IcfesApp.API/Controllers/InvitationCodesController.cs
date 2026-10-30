@@ -14,35 +14,18 @@ public class InvitationCodesController(IInvitationCodeService invitationCodeServ
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
         => Ok(await invitationCodeService.GetAllAsync(cancellationToken));
 
-    [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
-    {
-        var invitationCode = await invitationCodeService.GetByIdAsync(id, cancellationToken);
-        return invitationCode is null ? NotFound() : Ok(invitationCode);
-    }
-
     [HttpPost]
     public async Task<IActionResult> Create(CreateInvitationCodeRequest request, CancellationToken cancellationToken)
-    {
-        var createResult = await invitationCodeService.CreateAsync(request, CurrentUserId, cancellationToken);
-        if (!createResult.Succeeded)
-        {
-            return ToErrorResponse(createResult);
-        }
+        => ToCreatedResult(await invitationCodeService.CreateAsync(request, CurrentUserId, cancellationToken));
 
-        return CreatedAtAction(nameof(GetById), new { id = createResult.Value!.Id }, createResult.Value);
-    }
-
+    /// <summary>
+    /// Updates uses, expiration and active state. To revoke a code send IsActive = false
+    /// (it is not deleted and can be reactivated later with IsActive = true).
+    /// Returns the updated code so the client can update its list without reloading it.
+    /// </summary>
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, UpdateInvitationCodeRequest request, CancellationToken cancellationToken)
         => ToActionResult(await invitationCodeService.UpdateAsync(id, request, cancellationToken));
-
-    /// <summary>
-    /// Revokes the code without deleting it. It can be reactivated by updating it with IsActive = true.
-    /// </summary>
-    [HttpPost("{id:guid}/revoke")]
-    public async Task<IActionResult> Revoke(Guid id, CancellationToken cancellationToken)
-        => ToActionResult(await invitationCodeService.RevokeAsync(id, cancellationToken));
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)

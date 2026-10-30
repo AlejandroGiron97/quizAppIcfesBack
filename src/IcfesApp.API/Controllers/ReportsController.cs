@@ -10,7 +10,7 @@ namespace IcfesApp.API.Controllers;
 public class ReportsController(IReportService reportService) : ApiControllerBase
 {
     /// <summary>Performance of the students in the authenticated teacher's institution.</summary>
-    [HttpGet("students")]
-    public async Task<IActionResult> GetStudentsReport(CancellationToken cancellationToken)
+    [HttpGet("student-performance")]
+    public async Task<IActionResult> GetStudentPerformance(CancellationToken cancellationToken)
         => Ok(await reportService.GetStudentsReportAsync(CurrentUserId, cancellationToken));
 }

@@ -18,7 +18,7 @@ public class AuthResult : Result
     public DateTime? RefreshTokenExpiresAtUtc { get; private init; }
 
     /// <summary>
-    /// User data. Null when the token issuance does not include it (e.g. /refresh).
+    /// User data. Set whenever tokens are issued; null for "2FA required" and "registration pending".
     /// </summary>
     public UserInfoDto? User { get; private init; }
 

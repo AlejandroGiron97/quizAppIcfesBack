@@ -28,6 +28,14 @@ public abstract class ApiControllerBase : ControllerBase
     protected IActionResult ToActionResult<T>(Result<T> result) =>
         result.Succeeded ? Ok(result.Value) : ToErrorResponse(result);
 
+    /// <summary>Success → 201 Created with the new resource in the body. Failure → status code based on the error type.</summary>
+    protected IActionResult ToCreatedResult<T>(Result<T> result) =>
+        result.Succeeded ? CreatedWithBody(result.Value) : ToErrorResponse(result);
+
+    /// <summary>201 Created with the new resource in the body (the API has no "get by id" routes to point to).</summary>
+    protected IActionResult CreatedWithBody<T>(T createdResource) =>
+        StatusCode(StatusCodes.Status201Created, createdResource);
+
     /// <summary>Error response using the common API format: { "errors": [...] }.</summary>
     protected IActionResult ToErrorResponse(Result failedResult)
     {

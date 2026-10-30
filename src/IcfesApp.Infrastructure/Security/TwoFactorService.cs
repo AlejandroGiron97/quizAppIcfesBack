@@ -102,7 +102,7 @@ public class TwoFactorService(
             return AuthResult.Failed([InvalidCodeMessage], ErrorType.Unauthorized);
         }
 
-        return await authTokenIssuer.IssueTokensAsync(user, includeUser: true, cancellationToken);
+        return await authTokenIssuer.IssueTokensAsync(user, cancellationToken);
     }
 
     private Task<bool> IsAuthenticatorCodeValidAsync(ApplicationUser user, string authenticatorCode) =>

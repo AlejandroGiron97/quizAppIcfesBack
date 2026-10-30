@@ -20,7 +20,7 @@ public class SubscriptionService(
     ApplicationDbContext dbContext,
     IEnumerable<ISubscriptionOwnerStrategy> ownerStrategies) : ISubscriptionService
 {
-    public async Task<SubscriptionDto?> GetMineAsync(Guid userId, CancellationToken cancellationToken = default)
+    public async Task<SubscriptionDto?> GetForUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var owner = await FindOwnerContextAsync(userId, cancellationToken);
         if (owner is null)
@@ -41,25 +41,19 @@ public class SubscriptionService(
         return latestOwnedSubscription?.ToDto();
     }
 
-    public async Task<SubscriptionDto?> GetForInstitutionAsync(Guid institutionId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SubscriptionDto>> GetAllAsync(Guid? institutionId = null, CancellationToken cancellationToken = default)
     {
-        var latestInstitutionSubscription = await dbContext.Subscriptions
+        IQueryable<Subscription> subscriptionsQuery = dbContext.Subscriptions
             .AsNoTracking()
             .Include(subscription => subscription.Plan)
-            .Include(subscription => subscription.Institution)
-            .Where(subscription => subscription.InstitutionId == institutionId)
-            .OrderByDescending(subscription => subscription.StartedAtUtc)
-            .FirstOrDefaultAsync(cancellationToken);
+            .Include(subscription => subscription.Institution);
 
-        return latestInstitutionSubscription?.ToDto();
-    }
+        if (institutionId.HasValue)
+        {
+            subscriptionsQuery = subscriptionsQuery.Where(subscription => subscription.InstitutionId == institutionId);
+        }
 
-    public async Task<IReadOnlyList<SubscriptionDto>> GetAllAsync(CancellationToken cancellationToken = default)
-    {
-        var subscriptions = await dbContext.Subscriptions
-            .AsNoTracking()
-            .Include(subscription => subscription.Plan)
-            .Include(subscription => subscription.Institution)
+        var subscriptions = await subscriptionsQuery
             .OrderByDescending(subscription => subscription.StartedAtUtc)
             .ToListAsync(cancellationToken);
 
