@@ -1,6 +1,4 @@
-using System.Security.Claims;
 using IcfesApp.Application.Common.Interfaces;
-using IcfesApp.Application.Common.Models;
 using IcfesApp.Application.Questions.Dtos;
 using IcfesApp.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
@@ -8,10 +6,14 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace IcfesApp.API.Controllers;
 
-[ApiController]
+/// <summary>
+/// Banco de preguntas. Todo el controlador es solo para Teacher/Admin porque QuestionDto
+/// incluye cuál es la opción correcta. El estudiante recibe las preguntas a través de
+/// /api/practice-sessions, que nunca revela la respuesta antes de tiempo.
+/// </summary>
 [Route("api/questions")]
-[Authorize]
-public class QuestionsController(IQuestionService questionService) : ControllerBase
+[Authorize(Policy = Policies.RequireTeacher)]
+public class QuestionsController(IQuestionService questionService) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] Guid? subjectId, CancellationToken cancellationToken)
@@ -25,43 +27,22 @@ public class QuestionsController(IQuestionService questionService) : ControllerB
     }
 
     [HttpPost]
-    [Authorize(Policy = Policies.RequireTeacher)]
     public async Task<IActionResult> Create(CreateQuestionRequest request, CancellationToken cancellationToken)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var result = await questionService.CreateAsync(request, userId, cancellationToken);
-
-        if (!result.Succeeded)
+        var createResult = await questionService.CreateAsync(request, CurrentUserId, cancellationToken);
+        if (!createResult.Succeeded)
         {
-            return BadRequest(new { errors = result.Errors });
+            return ToErrorResponse(createResult);
         }
 
-        return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
+        return CreatedAtAction(nameof(GetById), new { id = createResult.Value!.Id }, createResult.Value);
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Policy = Policies.RequireTeacher)]
     public async Task<IActionResult> Update(Guid id, UpdateQuestionRequest request, CancellationToken cancellationToken)
-    {
-        var result = await questionService.UpdateAsync(id, request, cancellationToken);
-        return ToActionResult(result);
-    }
+        => ToActionResult(await questionService.UpdateAsync(id, request, cancellationToken));
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Policy = Policies.RequireTeacher)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
-    {
-        var result = await questionService.DeleteAsync(id, cancellationToken);
-        return ToActionResult(result);
-    }
-
-    private IActionResult ToActionResult(Result result)
-    {
-        if (result.IsNotFound)
-        {
-            return NotFound();
-        }
-
-        return result.Succeeded ? NoContent() : BadRequest(new { errors = result.Errors });
-    }
+        => ToActionResult(await questionService.DeleteAsync(id, cancellationToken));
 }

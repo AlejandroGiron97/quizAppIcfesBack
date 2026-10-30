@@ -1,6 +1,4 @@
-﻿using System.Security.Claims;
-using IcfesApp.Application.Common.Interfaces;
-using IcfesApp.Application.Common.Models;
+﻿using IcfesApp.Application.Common.Interfaces;
 using IcfesApp.Application.InvitationCodes.Dtos;
 using IcfesApp.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
@@ -8,10 +6,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace IcfesApp.API.Controllers;
 
-[ApiController]
 [Route("api/invitation-codes")]
 [Authorize(Policy = Policies.RequireAdmin)]
-public class InvitationCodesController(IInvitationCodeService invitationCodeService) : ControllerBase
+public class InvitationCodesController(IInvitationCodeService invitationCodeService) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
@@ -20,55 +17,34 @@ public class InvitationCodesController(IInvitationCodeService invitationCodeServ
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
-        var code = await invitationCodeService.GetByIdAsync(id, cancellationToken);
-        return code is null ? NotFound() : Ok(code);
+        var invitationCode = await invitationCodeService.GetByIdAsync(id, cancellationToken);
+        return invitationCode is null ? NotFound() : Ok(invitationCode);
     }
 
     [HttpPost]
     public async Task<IActionResult> Create(CreateInvitationCodeRequest request, CancellationToken cancellationToken)
     {
-        var result = await invitationCodeService.CreateAsync(request, CurrentUserId, cancellationToken);
-        if (!result.Succeeded)
+        var createResult = await invitationCodeService.CreateAsync(request, CurrentUserId, cancellationToken);
+        if (!createResult.Succeeded)
         {
-            return BadRequest(new { errors = result.Errors });
+            return ToErrorResponse(createResult);
         }
 
-        return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
+        return CreatedAtAction(nameof(GetById), new { id = createResult.Value!.Id }, createResult.Value);
     }
 
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, UpdateInvitationCodeRequest request, CancellationToken cancellationToken)
-    {
-        var result = await invitationCodeService.UpdateAsync(id, request, cancellationToken);
-        return ToActionResult(result);
-    }
+        => ToActionResult(await invitationCodeService.UpdateAsync(id, request, cancellationToken));
 
     /// <summary>
     /// Revoca el código sin borrarlo. Se puede reactivar actualizándolo con IsActive = true.
     /// </summary>
     [HttpPost("{id:guid}/revoke")]
     public async Task<IActionResult> Revoke(Guid id, CancellationToken cancellationToken)
-    {
-        var result = await invitationCodeService.RevokeAsync(id, cancellationToken);
-        return ToActionResult(result);
-    }
+        => ToActionResult(await invitationCodeService.RevokeAsync(id, cancellationToken));
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
-    {
-        var result = await invitationCodeService.DeleteAsync(id, cancellationToken);
-        return ToActionResult(result);
-    }
-
-    private Guid CurrentUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-
-    private IActionResult ToActionResult(Result result)
-    {
-        if (result.IsNotFound)
-        {
-            return NotFound();
-        }
-
-        return result.Succeeded ? NoContent() : BadRequest(new { errors = result.Errors });
-    }
+        => ToActionResult(await invitationCodeService.DeleteAsync(id, cancellationToken));
 }

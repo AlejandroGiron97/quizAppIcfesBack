@@ -5,14 +5,16 @@ namespace IcfesApp.Domain.Entities;
 
 public class Question : BaseEntity
 {
+    /// <summary>Enunciado de la pregunta.</summary>
     public required string Text { get; set; }
 
-    // URL de la imagen principal de la pregunta (mapas, gráficas, etc.)
+    /// <summary>Imagen opcional del enunciado (mapas, gráficas, tablas...).</summary>
     public string? ImageUrl { get; set; }
 
+    /// <summary>Explicación de la respuesta correcta que ve el estudiante después de responder.</summary>
     public required string Justification { get; set; }
 
-    // URL de la imagen de la justificación (por si tiene fórmulas complejas)
+    /// <summary>Imagen opcional de la justificación (fórmulas, procedimientos...).</summary>
     public string? JustificationImageUrl { get; set; }
 
     public QuestionDifficulty Difficulty { get; set; } = QuestionDifficulty.Medium;
@@ -22,7 +24,11 @@ public class Question : BaseEntity
 
     public Guid CreatedByUserId { get; set; }
 
-    // Relación con las opciones (que también tienen ImageUrl)
+    /// <summary>Opciones de respuesta. Siempre hay exactamente una correcta (lo garantiza QuestionBuilder).</summary>
     public ICollection<QuestionOption> Options { get; set; } = [];
+
     public ICollection<StudentAnswer> StudentAnswers { get; set; } = [];
+
+    /// <summary>La opción correcta. Requiere que <see cref="Options"/> esté cargada. No se guarda en BD.</summary>
+    public QuestionOption CorrectOption => Options.Single(option => option.IsCorrect);
 }

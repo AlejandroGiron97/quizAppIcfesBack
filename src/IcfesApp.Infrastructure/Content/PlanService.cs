@@ -1,4 +1,5 @@
 ﻿using IcfesApp.Application.Common.Interfaces;
+using IcfesApp.Application.Plans;
 using IcfesApp.Application.Plans.Dtos;
 using IcfesApp.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -12,55 +13,33 @@ public class PlanService(IApplicationDbContext dbContext) : IPlanService
         bool includeInactive = false,
         CancellationToken cancellationToken = default)
     {
-        var query = dbContext.Plans.AsQueryable();
+        var plansQuery = dbContext.Plans.AsNoTracking();
 
         if (!includeInactive)
         {
-            query = query.Where(p => p.IsActive);
+            plansQuery = plansQuery.Where(plan => plan.IsActive);
         }
 
         if (!string.IsNullOrWhiteSpace(target) &&
-            Enum.TryParse<PlanTarget>(target, ignoreCase: true, out var parsedTarget))
+            Enum.TryParse<PlanTarget>(target, ignoreCase: true, out var planTarget))
         {
-            query = query.Where(p => p.Target == parsedTarget);
+            plansQuery = plansQuery.Where(plan => plan.Target == planTarget);
         }
 
-        return await query
-            .OrderBy(p => p.Target)
-            .ThenBy(p => p.DisplayOrder)
-            .Select(p => new PlanDto
-            {
-                Id = p.Id,
-                Code = p.Code,
-                Name = p.Name,
-                Description = p.Description,
-                Target = p.Target.ToString(),
-                DurationDays = p.DurationDays,
-                Price = p.Price,
-                Currency = p.Currency,
-                IsActive = p.IsActive,
-                DisplayOrder = p.DisplayOrder
-            })
+        var plans = await plansQuery
+            .OrderBy(plan => plan.Target)
+            .ThenBy(plan => plan.DisplayOrder)
             .ToListAsync(cancellationToken);
+
+        return plans.Select(plan => plan.ToDto()).ToList();
     }
 
     public async Task<PlanDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await dbContext.Plans
-            .Where(p => p.Id == id)
-            .Select(p => new PlanDto
-            {
-                Id = p.Id,
-                Code = p.Code,
-                Name = p.Name,
-                Description = p.Description,
-                Target = p.Target.ToString(),
-                DurationDays = p.DurationDays,
-                Price = p.Price,
-                Currency = p.Currency,
-                IsActive = p.IsActive,
-                DisplayOrder = p.DisplayOrder
-            })
-            .FirstOrDefaultAsync(cancellationToken);
+        var plan = await dbContext.Plans
+            .AsNoTracking()
+            .FirstOrDefaultAsync(plan => plan.Id == id, cancellationToken);
+
+        return plan?.ToDto();
     }
 }

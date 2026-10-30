@@ -1,6 +1,8 @@
 using IcfesApp.Application.Common.Interfaces;
 using IcfesApp.Application.Common.Models;
+using IcfesApp.Application.Questions;
 using IcfesApp.Application.Questions.Dtos;
+using IcfesApp.Domain.Builders;
 using IcfesApp.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,108 +10,97 @@ namespace IcfesApp.Infrastructure.Content;
 
 public class QuestionService(IApplicationDbContext dbContext) : IQuestionService
 {
+    private const string SubjectNotFoundMessage = "La materia indicada no existe.";
+
     public async Task<IReadOnlyList<QuestionDto>> GetAllAsync(Guid? subjectId, CancellationToken cancellationToken = default)
     {
-        var query = dbContext.Questions
-            .Include(q => q.Subject)
-            .Include(q => q.Options)
+        var questionsQuery = dbContext.Questions
+            .AsNoTracking()
+            .Include(question => question.Subject)
+            .Include(question => question.Options)
             .AsQueryable();
 
         if (subjectId is not null)
         {
-            query = query.Where(q => q.SubjectId == subjectId);
+            questionsQuery = questionsQuery.Where(question => question.SubjectId == subjectId);
         }
 
-        var questions = await query
-            .OrderByDescending(q => q.CreatedAtUtc)
+        var questions = await questionsQuery
+            .OrderByDescending(question => question.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
-        return questions.Select(ToDto).ToList();
+        return questions.Select(question => question.ToDto()).ToList();
     }
 
     public async Task<QuestionDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var question = await dbContext.Questions
-            .Include(q => q.Subject)
-            .Include(q => q.Options)
-            .FirstOrDefaultAsync(q => q.Id == id, cancellationToken);
+            .AsNoTracking()
+            .Include(question => question.Subject)
+            .Include(question => question.Options)
+            .FirstOrDefaultAsync(question => question.Id == id, cancellationToken);
 
-        return question is null ? null : ToDto(question);
+        return question?.ToDto();
     }
 
     public async Task<Result<QuestionDto>> CreateAsync(CreateQuestionRequest request, Guid createdByUserId, CancellationToken cancellationToken = default)
     {
-        var validationErrors = ValidateOptions(request.Options);
+        var questionBuilder = CreateBuilderFrom(request).CreatedBy(createdByUserId);
+
+        var validationErrors = questionBuilder.Validate();
         if (validationErrors.Count > 0)
         {
             return Result<QuestionDto>.Failed(validationErrors);
         }
 
-        var subject = await dbContext.Subjects.FirstOrDefaultAsync(s => s.Id == request.SubjectId, cancellationToken);
+        var subject = await dbContext.Subjects.FirstOrDefaultAsync(subject => subject.Id == request.SubjectId, cancellationToken);
         if (subject is null)
         {
-            return Result<QuestionDto>.Failed(["La materia indicada no existe."]);
+            return Result<QuestionDto>.Failed([SubjectNotFoundMessage]);
         }
 
-        var question = new Question
-        {
-            Text = request.Text,
-            Justification = request.Justification,
-            Difficulty = request.Difficulty,
-            SubjectId = request.SubjectId,
-            CreatedByUserId = createdByUserId,
-            Options = request.Options
-                .Select(o => new QuestionOption { Text = o.Text, IsCorrect = o.IsCorrect })
-                .ToList()
-        };
-
+        var question = questionBuilder.Build();
         dbContext.Questions.Add(question);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         question.Subject = subject;
-        return Result<QuestionDto>.Success(ToDto(question));
+        return Result<QuestionDto>.Success(question.ToDto());
     }
 
     public async Task<Result> UpdateAsync(Guid id, UpdateQuestionRequest request, CancellationToken cancellationToken = default)
     {
-        var validationErrors = ValidateOptions(request.Options);
+        var questionBuilder = CreateBuilderFrom(request);
+
+        var validationErrors = questionBuilder.Validate();
         if (validationErrors.Count > 0)
         {
             return Result.Failed(validationErrors);
         }
 
-        var question = await dbContext.Questions
-            .Include(q => q.Options)
-            .FirstOrDefaultAsync(q => q.Id == id, cancellationToken);
+        var existingQuestion = await dbContext.Questions
+            .Include(question => question.Options)
+            .FirstOrDefaultAsync(question => question.Id == id, cancellationToken);
 
-        if (question is null)
+        if (existingQuestion is null)
         {
             return Result.NotFound();
         }
 
-        var subjectExists = await dbContext.Subjects.AnyAsync(s => s.Id == request.SubjectId, cancellationToken);
+        var subjectExists = await dbContext.Subjects.AnyAsync(subject => subject.Id == request.SubjectId, cancellationToken);
         if (!subjectExists)
         {
-            return Result.Failed(["La materia indicada no existe."]);
+            return Result.Failed([SubjectNotFoundMessage]);
         }
 
-        question.Text = request.Text;
-        question.Justification = request.Justification;
-        question.Difficulty = request.Difficulty;
-        question.SubjectId = request.SubjectId;
-        question.UpdatedAtUtc = DateTime.UtcNow;
+        existingQuestion.Text = request.Text.Trim();
+        existingQuestion.ImageUrl = request.ImageUrl;
+        existingQuestion.Justification = request.Justification.Trim();
+        existingQuestion.JustificationImageUrl = request.JustificationImageUrl;
+        existingQuestion.Difficulty = request.Difficulty;
+        existingQuestion.SubjectId = request.SubjectId;
+        existingQuestion.UpdatedAtUtc = DateTime.UtcNow;
 
-        // Reemplazo explícito de las opciones: al reasignar la navegación de un padre ya
-        // trackeado, EF Core hace fixup automático y como las nuevas QuestionOption ya
-        // tienen un Guid no vacío (por el inicializador de BaseEntity.Id), las marca como
-        // Modified en vez de Added. Por eso se agregan explícitamente al DbSet con AddRange.
-        var newOptions = request.Options
-            .Select(option => new QuestionOption { Text = option.Text, IsCorrect = option.IsCorrect, QuestionId = question.Id })
-            .ToList();
-
-        dbContext.QuestionOptions.RemoveRange(question.Options);
-        dbContext.QuestionOptions.AddRange(newOptions);
-        question.Options = newOptions;
+        ReplaceOptions(existingQuestion, questionBuilder.BuildOptionsFor(existingQuestion.Id));
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return Result.Success();
@@ -117,7 +108,7 @@ public class QuestionService(IApplicationDbContext dbContext) : IQuestionService
 
     public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var question = await dbContext.Questions.FirstOrDefaultAsync(q => q.Id == id, cancellationToken);
+        var question = await dbContext.Questions.FirstOrDefaultAsync(question => question.Id == id, cancellationToken);
         if (question is null)
         {
             return Result.NotFound();
@@ -137,34 +128,32 @@ public class QuestionService(IApplicationDbContext dbContext) : IQuestionService
         return Result.Success();
     }
 
-    private static List<string> ValidateOptions(List<CreateQuestionOptionRequest> options)
+    /// <summary>Traduce la petición HTTP al builder del dominio, que es quien valida las reglas.</summary>
+    private static QuestionBuilder CreateBuilderFrom(CreateQuestionRequest request)
     {
-        var errors = new List<string>();
+        var questionBuilder = QuestionBuilder.ForSubject(request.SubjectId)
+            .WithStatement(request.Text, request.ImageUrl)
+            .WithJustification(request.Justification, request.JustificationImageUrl)
+            .WithDifficulty(request.Difficulty);
 
-        if (options.Count < 2)
+        foreach (var optionRequest in request.Options)
         {
-            errors.Add("La pregunta debe tener al menos 2 opciones.");
+            questionBuilder.AddOption(optionRequest.Text, optionRequest.IsCorrect, optionRequest.ImageUrl);
         }
 
-        if (options.Count(o => o.IsCorrect) != 1)
-        {
-            errors.Add("La pregunta debe tener exactamente una opción correcta.");
-        }
-
-        return errors;
+        return questionBuilder;
     }
 
-    private static QuestionDto ToDto(Question question) => new()
+    /// <summary>
+    /// Reemplaza las opciones de una pregunta ya trackeada por EF Core.
+    /// Las nuevas opciones se agregan explícitamente con AddRange: como ya traen un Guid
+    /// (lo asigna BaseEntity), EF las marcaría como Modified en vez de Added si solo se
+    /// reasignara la navegación.
+    /// </summary>
+    private void ReplaceOptions(Question existingQuestion, List<QuestionOption> newOptions)
     {
-        Id = question.Id,
-        Text = question.Text,
-        Justification = question.Justification,
-        Difficulty = question.Difficulty,
-        SubjectId = question.SubjectId,
-        SubjectName = question.Subject?.Name ?? string.Empty,
-        CreatedByUserId = question.CreatedByUserId,
-        Options = question.Options
-            .Select(o => new QuestionOptionDto { Id = o.Id, Text = o.Text, IsCorrect = o.IsCorrect })
-            .ToList()
-    };
+        dbContext.QuestionOptions.RemoveRange(existingQuestion.Options);
+        dbContext.QuestionOptions.AddRange(newOptions);
+        existingQuestion.Options = newOptions;
+    }
 }

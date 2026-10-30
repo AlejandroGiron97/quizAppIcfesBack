@@ -1,5 +1,4 @@
 using IcfesApp.Application.Common.Interfaces;
-using IcfesApp.Application.Common.Models;
 using IcfesApp.Application.Schools.Dtos;
 using IcfesApp.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
@@ -7,10 +6,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace IcfesApp.API.Controllers;
 
-[ApiController]
 [Route("api/institutions")]
 [Authorize]
-public class InstitutionsController(ISchoolService schoolService) : ControllerBase
+public class InstitutionsController(ISchoolService schoolService) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
@@ -27,33 +25,17 @@ public class InstitutionsController(ISchoolService schoolService) : ControllerBa
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> Create(CreateSchoolRequest request, CancellationToken cancellationToken)
     {
-        var created = await schoolService.CreateAsync(request, cancellationToken);
-        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        var createdInstitution = await schoolService.CreateAsync(request, cancellationToken);
+        return CreatedAtAction(nameof(GetById), new { id = createdInstitution.Id }, createdInstitution);
     }
 
     [HttpPut("{id:guid}")]
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> Update(Guid id, UpdateSchoolRequest request, CancellationToken cancellationToken)
-    {
-        var result = await schoolService.UpdateAsync(id, request, cancellationToken);
-        return ToActionResult(result);
-    }
+        => ToActionResult(await schoolService.UpdateAsync(id, request, cancellationToken));
 
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
-    {
-        var result = await schoolService.DeleteAsync(id, cancellationToken);
-        return ToActionResult(result);
-    }
-
-    private IActionResult ToActionResult(Result result)
-    {
-        if (result.IsNotFound)
-        {
-            return NotFound();
-        }
-
-        return result.Succeeded ? NoContent() : BadRequest(new { errors = result.Errors });
-    }
+        => ToActionResult(await schoolService.DeleteAsync(id, cancellationToken));
 }

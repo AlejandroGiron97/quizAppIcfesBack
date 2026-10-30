@@ -1,15 +1,13 @@
-﻿using System.Security.Claims;
-using IcfesApp.Application.Common.Interfaces;
+﻿using IcfesApp.Application.Common.Interfaces;
 using IcfesApp.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace IcfesApp.API.Controllers;
 
-[ApiController]
 [Route("api/subscriptions")]
 [Authorize]
-public class SubscriptionsController(ISubscriptionService subscriptionService) : ControllerBase
+public class SubscriptionsController(ISubscriptionService subscriptionService) : ApiControllerBase
 {
     /// <summary>
     /// Devuelve la suscripción relevante para el usuario autenticado:
@@ -19,10 +17,7 @@ public class SubscriptionsController(ISubscriptionService subscriptionService) :
     [HttpGet("current")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCurrent(CancellationToken cancellationToken)
-    {
-        var subscription = await subscriptionService.GetMineAsync(CurrentUserId, cancellationToken);
-        return Ok(subscription);
-    }
+        => Ok(await subscriptionService.GetMineAsync(CurrentUserId, cancellationToken));
 
     /// <summary>Lista todas las suscripciones. Solo Super Admin.</summary>
     [HttpGet]
@@ -35,10 +30,7 @@ public class SubscriptionsController(ISubscriptionService subscriptionService) :
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> GetForInstitution(Guid institutionId, CancellationToken cancellationToken)
     {
-        var subscription = await subscriptionService.GetForInstitutionAsync(institutionId, cancellationToken);
-        return subscription is null ? NotFound() : Ok(subscription);
+        var institutionSubscription = await subscriptionService.GetForInstitutionAsync(institutionId, cancellationToken);
+        return institutionSubscription is null ? NotFound() : Ok(institutionSubscription);
     }
-
-    private Guid CurrentUserId =>
-        Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 }

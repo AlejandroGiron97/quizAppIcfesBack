@@ -1,6 +1,7 @@
 ﻿using System.Security.Cryptography;
 using IcfesApp.Application.Common.Interfaces;
 using IcfesApp.Application.Common.Models;
+using IcfesApp.Application.InvitationCodes;
 using IcfesApp.Application.InvitationCodes.Dtos;
 using IcfesApp.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -9,26 +10,33 @@ namespace IcfesApp.Infrastructure.Content;
 
 public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitationCodeService
 {
-    // Alfabeto sin caracteres confundibles (sin I, O, 0, 1)
+    /// <summary>Alfabeto sin caracteres que se confunden al leerlos (sin I, O, 0, 1).</summary>
     private const string CodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private const int RandomSuffixLength = 6;
+    private const int MaxPrefixLength = 6;
+    private const int MinPrefixLength = 3;
+    private const string FallbackPrefix = "CODE";
+    private const int UnlimitedUses = -1;
 
     public async Task<IReadOnlyList<InvitationCodeDto>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        var codes = await dbContext.InvitationCodes
-            .Include(ic => ic.Institution)
-            .OrderByDescending(ic => ic.CreatedAtUtc)
+        var invitationCodes = await dbContext.InvitationCodes
+            .AsNoTracking()
+            .Include(invitationCode => invitationCode.Institution)
+            .OrderByDescending(invitationCode => invitationCode.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
-        return codes.Select(MapToDto).ToList();
+        return invitationCodes.Select(invitationCode => invitationCode.ToDto()).ToList();
     }
 
     public async Task<InvitationCodeDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var code = await dbContext.InvitationCodes
-            .Include(ic => ic.Institution)
-            .FirstOrDefaultAsync(ic => ic.Id == id, cancellationToken);
+        var invitationCode = await dbContext.InvitationCodes
+            .AsNoTracking()
+            .Include(invitationCode => invitationCode.Institution)
+            .FirstOrDefaultAsync(invitationCode => invitationCode.Id == id, cancellationToken);
 
-        return code is null ? null : MapToDto(code);
+        return invitationCode?.ToDto();
     }
 
     public async Task<Result<InvitationCodeDto>> CreateAsync(
@@ -37,14 +45,14 @@ public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitatio
         CancellationToken cancellationToken = default)
     {
         var institution = await dbContext.Schools
-            .FirstOrDefaultAsync(s => s.Id == request.InstitutionId, cancellationToken);
+            .FirstOrDefaultAsync(school => school.Id == request.InstitutionId, cancellationToken);
 
         if (institution is null)
         {
             return Result<InvitationCodeDto>.Failed(["La institución especificada no existe."]);
         }
 
-        if (request.MaxUses != -1 && request.MaxUses < 1)
+        if (request.MaxUses != UnlimitedUses && request.MaxUses < 1)
         {
             return Result<InvitationCodeDto>.Failed(["MaxUses debe ser -1 (ilimitado) o mayor a 0."]);
         }
@@ -54,22 +62,23 @@ public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitatio
             return Result<InvitationCodeDto>.Failed(["La fecha de expiración debe ser futura."]);
         }
 
-        var code = string.IsNullOrWhiteSpace(request.Code)
-            ? GenerateCode(institution.Name)
+        var codeValue = string.IsNullOrWhiteSpace(request.Code)
+            ? GenerateCodeValue(institution.Name)
             : request.Code.Trim().ToUpperInvariant();
 
-        var alreadyExists = await dbContext.InvitationCodes
-            .AnyAsync(ic => ic.Code == code, cancellationToken);
+        var codeValueAlreadyExists = await dbContext.InvitationCodes
+            .AnyAsync(invitationCode => invitationCode.Code == codeValue, cancellationToken);
 
-        if (alreadyExists)
+        if (codeValueAlreadyExists)
         {
             return Result<InvitationCodeDto>.Failed(["Ya existe un código con ese valor."]);
         }
 
-        var invitationCode = new InvitationCode
+        var newInvitationCode = new InvitationCode
         {
-            Code = code,
+            Code = codeValue,
             InstitutionId = request.InstitutionId,
+            Institution = institution,
             MaxUses = request.MaxUses,
             Uses = 0,
             ExpiresAtUtc = request.ExpiresAtUtc,
@@ -77,28 +86,25 @@ public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitatio
             CreatedByUserId = createdByUserId
         };
 
-        dbContext.InvitationCodes.Add(invitationCode);
+        dbContext.InvitationCodes.Add(newInvitationCode);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        // Recargar con la institución para el DTO
-        invitationCode.Institution = institution;
-
-        return Result<InvitationCodeDto>.Success(MapToDto(invitationCode));
+        return Result<InvitationCodeDto>.Success(newInvitationCode.ToDto());
     }
 
     public async Task<Result> UpdateAsync(Guid id, UpdateInvitationCodeRequest request, CancellationToken cancellationToken = default)
     {
-        var code = await dbContext.InvitationCodes
-            .FirstOrDefaultAsync(ic => ic.Id == id, cancellationToken);
+        var invitationCode = await dbContext.InvitationCodes
+            .FirstOrDefaultAsync(invitationCode => invitationCode.Id == id, cancellationToken);
 
-        if (code is null)
+        if (invitationCode is null)
         {
             return Result.NotFound();
         }
 
-        if (request.MaxUses != -1 && request.MaxUses < code.Uses)
+        if (request.MaxUses != UnlimitedUses && request.MaxUses < invitationCode.Uses)
         {
-            return Result.Failed([$"MaxUses no puede ser menor a los usos ya realizados ({code.Uses})."]);
+            return Result.Failed([$"MaxUses no puede ser menor a los usos ya realizados ({invitationCode.Uses})."]);
         }
 
         if (request.ExpiresAtUtc.HasValue && request.ExpiresAtUtc.Value <= DateTime.UtcNow)
@@ -106,10 +112,10 @@ public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitatio
             return Result.Failed(["La fecha de expiración debe ser futura."]);
         }
 
-        code.MaxUses = request.MaxUses;
-        code.ExpiresAtUtc = request.ExpiresAtUtc;
-        code.IsActive = request.IsActive;
-        code.UpdatedAtUtc = DateTime.UtcNow;
+        invitationCode.MaxUses = request.MaxUses;
+        invitationCode.ExpiresAtUtc = request.ExpiresAtUtc;
+        invitationCode.IsActive = request.IsActive;
+        invitationCode.UpdatedAtUtc = DateTime.UtcNow;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return Result.Success();
@@ -117,16 +123,16 @@ public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitatio
 
     public async Task<Result> RevokeAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var code = await dbContext.InvitationCodes
-            .FirstOrDefaultAsync(ic => ic.Id == id, cancellationToken);
+        var invitationCode = await dbContext.InvitationCodes
+            .FirstOrDefaultAsync(invitationCode => invitationCode.Id == id, cancellationToken);
 
-        if (code is null)
+        if (invitationCode is null)
         {
             return Result.NotFound();
         }
 
-        code.IsActive = false;
-        code.UpdatedAtUtc = DateTime.UtcNow;
+        invitationCode.IsActive = false;
+        invitationCode.UpdatedAtUtc = DateTime.UtcNow;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return Result.Success();
@@ -134,58 +140,42 @@ public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitatio
 
     public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var code = await dbContext.InvitationCodes
-            .FirstOrDefaultAsync(ic => ic.Id == id, cancellationToken);
+        var invitationCode = await dbContext.InvitationCodes
+            .FirstOrDefaultAsync(invitationCode => invitationCode.Id == id, cancellationToken);
 
-        if (code is null)
+        if (invitationCode is null)
         {
             return Result.NotFound();
         }
 
-        dbContext.InvitationCodes.Remove(code);
+        dbContext.InvitationCodes.Remove(invitationCode);
         await dbContext.SaveChangesAsync(cancellationToken);
-
         return Result.Success();
     }
 
-    private static string GenerateCode(string institutionName)
+    /// <summary>
+    /// Genera un código legible: prefijo con las primeras letras de la institución
+    /// y un sufijo aleatorio criptográficamente seguro. Ej: "COLEGI-7KQ2MX".
+    /// </summary>
+    private static string GenerateCodeValue(string institutionName)
     {
-        // Prefijo: primeras letras del nombre de la institución (solo letras, hasta 6)
         var prefix = new string(institutionName
-            .Where(char.IsLetter)
-            .Take(6)
-            .ToArray())
+                .Where(char.IsLetter)
+                .Take(MaxPrefixLength)
+                .ToArray())
             .ToUpperInvariant();
 
-        if (prefix.Length < 3)
+        if (prefix.Length < MinPrefixLength)
         {
-            prefix = "CODE";
+            prefix = FallbackPrefix;
         }
 
-        // Sufijo: 6 caracteres aleatorios criptográficamente seguros
-        var suffix = new char[6];
-        for (int i = 0; i < suffix.Length; i++)
+        var randomSuffix = new char[RandomSuffixLength];
+        for (var characterIndex = 0; characterIndex < randomSuffix.Length; characterIndex++)
         {
-            suffix[i] = CodeAlphabet[RandomNumberGenerator.GetInt32(CodeAlphabet.Length)];
+            randomSuffix[characterIndex] = CodeAlphabet[RandomNumberGenerator.GetInt32(CodeAlphabet.Length)];
         }
 
-        return $"{prefix}-{new string(suffix)}";
+        return $"{prefix}-{new string(randomSuffix)}";
     }
-
-    private static InvitationCodeDto MapToDto(InvitationCode code) => new()
-    {
-        Id = code.Id,
-        Code = code.Code,
-        InstitutionId = code.InstitutionId,
-        InstitutionName = code.Institution?.Name ?? string.Empty,
-        MaxUses = code.MaxUses,
-        Uses = code.Uses,
-        ExpiresAtUtc = code.ExpiresAtUtc,
-        IsActive = code.IsActive,
-        IsUsable = code.IsActive
-            && (code.MaxUses < 0 || code.Uses < code.MaxUses)
-            && (code.ExpiresAtUtc == null || code.ExpiresAtUtc > DateTime.UtcNow),
-        CreatedAtUtc = code.CreatedAtUtc,
-        UpdatedAtUtc = code.UpdatedAtUtc
-    };
 }

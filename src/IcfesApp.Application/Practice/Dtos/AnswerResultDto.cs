@@ -6,5 +6,5 @@ public class AnswerResultDto
     public bool IsCorrect { get; set; }
     public Guid CorrectOptionId { get; set; }
     public required string Justification { get; set; }
-    public string? JustificationImageUrl { get; set; } // <--- AGREGADO
+    public string? JustificationImageUrl { get; set; }
 }

@@ -1,5 +1,4 @@
 using IcfesApp.Application.Common.Interfaces;
-using IcfesApp.Application.Common.Models;
 using IcfesApp.Application.Subjects.Dtos;
 using IcfesApp.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
@@ -7,10 +6,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace IcfesApp.API.Controllers;
 
-[ApiController]
 [Route("api/subjects")]
 [Authorize]
-public class SubjectsController(ISubjectService subjectService) : ControllerBase
+public class SubjectsController(ISubjectService subjectService) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
@@ -27,33 +25,17 @@ public class SubjectsController(ISubjectService subjectService) : ControllerBase
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> Create(CreateSubjectRequest request, CancellationToken cancellationToken)
     {
-        var created = await subjectService.CreateAsync(request, cancellationToken);
-        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        var createdSubject = await subjectService.CreateAsync(request, cancellationToken);
+        return CreatedAtAction(nameof(GetById), new { id = createdSubject.Id }, createdSubject);
     }
 
     [HttpPut("{id:guid}")]
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> Update(Guid id, UpdateSubjectRequest request, CancellationToken cancellationToken)
-    {
-        var result = await subjectService.UpdateAsync(id, request, cancellationToken);
-        return ToActionResult(result);
-    }
+        => ToActionResult(await subjectService.UpdateAsync(id, request, cancellationToken));
 
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
-    {
-        var result = await subjectService.DeleteAsync(id, cancellationToken);
-        return ToActionResult(result);
-    }
-
-    private IActionResult ToActionResult(Result result)
-    {
-        if (result.IsNotFound)
-        {
-            return NotFound();
-        }
-
-        return result.Succeeded ? NoContent() : BadRequest(new { errors = result.Errors });
-    }
+        => ToActionResult(await subjectService.DeleteAsync(id, cancellationToken));
 }

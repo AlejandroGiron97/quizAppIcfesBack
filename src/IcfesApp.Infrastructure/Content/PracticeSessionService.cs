@@ -1,5 +1,6 @@
 using IcfesApp.Application.Common.Interfaces;
 using IcfesApp.Application.Common.Models;
+using IcfesApp.Application.Practice;
 using IcfesApp.Application.Practice.Dtos;
 using IcfesApp.Domain.Entities;
 using IcfesApp.Domain.Enums;
@@ -9,6 +10,8 @@ namespace IcfesApp.Infrastructure.Content;
 
 public class PracticeSessionService(IApplicationDbContext dbContext) : IPracticeSessionService
 {
+    private const string SessionNotFoundMessage = "Sesión no encontrada.";
+
     public async Task<Result<PracticeSessionDto>> StartAsync(StartPracticeSessionRequest request, Guid studentUserId, CancellationToken cancellationToken = default)
     {
         if (request.QuestionCount is <= 0)
@@ -16,72 +19,58 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
             return Result<PracticeSessionDto>.Failed(["QuestionCount debe ser mayor a 0."]);
         }
 
-        var subject = await dbContext.Subjects.FirstOrDefaultAsync(s => s.Id == request.SubjectId, cancellationToken);
+        var subject = await dbContext.Subjects.FirstOrDefaultAsync(subject => subject.Id == request.SubjectId, cancellationToken);
         if (subject is null)
         {
             return Result<PracticeSessionDto>.Failed(["La materia indicada no existe."]);
         }
 
-        var allQuestions = await dbContext.Questions
-            .Include(q => q.Options)
-            .Where(q => q.SubjectId == request.SubjectId)
-            .ToListAsync(cancellationToken);
-
-        if (allQuestions.Count == 0)
+        var selectedQuestions = await PickRandomQuestionsAsync(request.SubjectId, request.QuestionCount, cancellationToken);
+        if (selectedQuestions.Count == 0)
         {
             return Result<PracticeSessionDto>.Failed(["La materia no tiene preguntas disponibles."]);
         }
 
-        var questions = allQuestions
-            .OrderBy(_ => Guid.NewGuid())
-            .Take(request.QuestionCount ?? allQuestions.Count)
-            .ToList();
-
         var session = new PracticeSession
         {
             StudentUserId = studentUserId,
-            SubjectId = request.SubjectId,
+            SubjectId = subject.Id,
+            Subject = subject,
             Status = PracticeSessionStatus.InProgress,
-            Answers = questions.Select(q => new StudentAnswer
-            {
-                QuestionId = q.Id,
-                Question = q,
-                IsCorrect = false
-            }).ToList()
+            Answers = selectedQuestions
+                .Select(question => new StudentAnswer { QuestionId = question.Id, Question = question })
+                .ToList()
         };
 
         dbContext.PracticeSessions.Add(session);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return Result<PracticeSessionDto>.Success(ToDto(session, subject));
+        return Result<PracticeSessionDto>.Success(session.ToDto());
     }
 
     public async Task<PracticeSessionDto?> GetByIdAsync(Guid id, Guid studentUserId, CancellationToken cancellationToken = default)
     {
-        var session = await LoadOwnedSessionAsync(id, studentUserId, cancellationToken);
-        return session is null ? null : ToDto(session, session.Subject);
+        var session = await FindStudentSessionAsync(id, studentUserId, cancellationToken);
+        return session?.ToDto();
     }
 
     public async Task<IReadOnlyList<PracticeSessionDto>> GetMineAsync(Guid studentUserId, CancellationToken cancellationToken = default)
     {
-        var sessions = await dbContext.PracticeSessions
-            .Include(s => s.Subject)
-            .Include(s => s.Answers).ThenInclude(a => a.Question).ThenInclude(q => q.Options)
-            .Where(s => s.StudentUserId == studentUserId)
-            .OrderByDescending(s => s.StartedAtUtc)
+        var studentSessions = await SessionsWithQuestions()
+            .AsNoTracking()
+            .Where(session => session.StudentUserId == studentUserId)
+            .OrderByDescending(session => session.StartedAtUtc)
             .ToListAsync(cancellationToken);
 
-        return sessions
-            .Select(s => ToDto(s, s.Subject))
-            .ToList();
+        return studentSessions.Select(session => session.ToDto()).ToList();
     }
 
     public async Task<Result<AnswerResultDto>> SubmitAnswerAsync(Guid sessionId, SubmitAnswerRequest request, Guid studentUserId, CancellationToken cancellationToken = default)
     {
-        var session = await LoadOwnedSessionAsync(sessionId, studentUserId, cancellationToken);
+        var session = await FindStudentSessionAsync(sessionId, studentUserId, cancellationToken);
         if (session is null)
         {
-            return Result<AnswerResultDto>.Failed(["Sesión no encontrada."]);
+            return Result<AnswerResultDto>.NotFound(SessionNotFoundMessage);
         }
 
         if (session.Status != PracticeSessionStatus.InProgress)
@@ -89,43 +78,30 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
             return Result<AnswerResultDto>.Failed(["La sesión ya fue finalizada."]);
         }
 
-        var answer = session.Answers.FirstOrDefault(a => a.QuestionId == request.QuestionId);
+        var answer = session.Answers.FirstOrDefault(answer => answer.QuestionId == request.QuestionId);
         if (answer is null)
         {
             return Result<AnswerResultDto>.Failed(["La pregunta no pertenece a esta sesión."]);
         }
 
-        var selectedOption = answer.Question.Options.FirstOrDefault(o => o.Id == request.SelectedOptionId);
+        var selectedOption = answer.Question.Options.FirstOrDefault(option => option.Id == request.SelectedOptionId);
         if (selectedOption is null)
         {
             return Result<AnswerResultDto>.Failed(["La opción indicada no pertenece a esta pregunta."]);
         }
 
-        var correctOption = answer.Question.Options.First(o => o.IsCorrect);
-
-        answer.SelectedOptionId = request.SelectedOptionId;
-        answer.IsCorrect = selectedOption.IsCorrect;
-        answer.AnsweredAtUtc = DateTime.UtcNow;
-        answer.UpdatedAtUtc = DateTime.UtcNow;
-
+        answer.RegisterSelectedOption(selectedOption);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return Result<AnswerResultDto>.Success(new AnswerResultDto
-        {
-            QuestionId = answer.QuestionId,
-            IsCorrect = answer.IsCorrect,
-            CorrectOptionId = correctOption.Id,
-            Justification = answer.Question.Justification,
-            JustificationImageUrl = answer.Question.JustificationImageUrl // <--- AGREGADO
-        });
+        return Result<AnswerResultDto>.Success(answer.ToAnswerResultDto());
     }
 
     public async Task<Result<PracticeSessionResultDto>> FinishAsync(Guid sessionId, Guid studentUserId, CancellationToken cancellationToken = default)
     {
-        var session = await LoadOwnedSessionAsync(sessionId, studentUserId, cancellationToken);
+        var session = await FindStudentSessionAsync(sessionId, studentUserId, cancellationToken);
         if (session is null)
         {
-            return Result<PracticeSessionResultDto>.Failed(["Sesión no encontrada."]);
+            return Result<PracticeSessionResultDto>.NotFound(SessionNotFoundMessage);
         }
 
         if (session.Status == PracticeSessionStatus.InProgress)
@@ -135,62 +111,46 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        var total = session.Answers.Count;
-        var correct = session.Answers.Count(a => a.IsCorrect);
-
-        return Result<PracticeSessionResultDto>.Success(new PracticeSessionResultDto
-        {
-            Id = session.Id,
-            TotalQuestions = total,
-            CorrectAnswers = correct,
-            ScorePercentage = total == 0 ? 0 : Math.Round(correct * 100.0 / total, 2),
-            Answers = session.Answers.Select(a => new AnswerReviewDto
-            {
-                QuestionId = a.QuestionId,
-                QuestionText = a.Question.Text,
-                QuestionImageUrl = a.Question.ImageUrl, // <--- AGREGADO
-                SelectedOptionId = a.SelectedOptionId,
-                CorrectOptionId = a.Question.Options.First(o => o.IsCorrect).Id,
-                IsCorrect = a.IsCorrect,
-                Justification = a.Question.Justification,
-                JustificationImageUrl = a.Question.JustificationImageUrl // <--- AGREGADO
-            }).ToList()
-        });
+        return Result<PracticeSessionResultDto>.Success(session.ToResultDto());
     }
 
-    private async Task<PracticeSession?> LoadOwnedSessionAsync(Guid id, Guid studentUserId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Elige preguntas al azar de una materia. Primero trae solo los Ids (consulta liviana),
+    /// los mezcla en memoria y después carga con sus opciones únicamente las elegidas.
+    /// </summary>
+    private async Task<List<Question>> PickRandomQuestionsAsync(Guid subjectId, int? requestedQuestionCount, CancellationToken cancellationToken)
     {
-        var session = await dbContext.PracticeSessions
-            .Include(s => s.Subject)
-            .Include(s => s.Answers).ThenInclude(a => a.Question).ThenInclude(q => q.Options)
-            .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+        var subjectQuestionIds = await dbContext.Questions
+            .Where(question => question.SubjectId == subjectId)
+            .Select(question => question.Id)
+            .ToListAsync(cancellationToken);
 
-        return session is null || session.StudentUserId != studentUserId ? null : session;
+        var selectedQuestionIds = subjectQuestionIds
+            .OrderBy(_ => Random.Shared.Next())
+            .Take(requestedQuestionCount ?? subjectQuestionIds.Count)
+            .ToList();
+
+        var selectedQuestions = await dbContext.Questions
+            .Include(question => question.Options)
+            .Where(question => selectedQuestionIds.Contains(question.Id))
+            .ToListAsync(cancellationToken);
+
+        // La consulta SQL no respeta el orden aleatorio: se reordena según la selección.
+        return selectedQuestions
+            .OrderBy(question => selectedQuestionIds.IndexOf(question.Id))
+            .ToList();
     }
 
-    private static PracticeSessionDto ToDto(PracticeSession session, Subject subject) => new()
-    {
-        Id = session.Id,
-        SubjectId = session.SubjectId,
-        SubjectName = subject.Name,
-        Status = session.Status.ToString(),
-        StartedAtUtc = session.StartedAtUtc,
-        FinishedAtUtc = session.FinishedAtUtc,
-        Questions = session.Answers.Select(a => new PracticeQuestionDto
-        {
-            QuestionId = a.QuestionId,
-            Text = a.Question.Text,
-            ImageUrl = a.Question.ImageUrl, // <--- AGREGADO
-            Options = a.Question.Options
-                .Select(o => new PracticeQuestionOptionDto
-                {
-                    Id = o.Id,
-                    Text = o.Text,
-                    ImageUrl = o.ImageUrl // <--- AGREGADO AQUÍ (ESTE ERA EL ERROR)
-                })
-                .ToList(),
-            Answered = a.SelectedOptionId is not null,
-            SelectedOptionId = a.SelectedOptionId
-        }).ToList()
-    };
+    /// <summary>Busca una sesión solo si pertenece al estudiante; si es de otro devuelve null.</summary>
+    private Task<PracticeSession?> FindStudentSessionAsync(Guid sessionId, Guid studentUserId, CancellationToken cancellationToken) =>
+        SessionsWithQuestions()
+            .FirstOrDefaultAsync(
+                session => session.Id == sessionId && session.StudentUserId == studentUserId,
+                cancellationToken);
+
+    private IQueryable<PracticeSession> SessionsWithQuestions() => dbContext.PracticeSessions
+        .Include(session => session.Subject)
+        .Include(session => session.Answers)
+            .ThenInclude(answer => answer.Question)
+            .ThenInclude(question => question.Options);
 }

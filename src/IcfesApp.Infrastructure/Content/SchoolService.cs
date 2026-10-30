@@ -1,5 +1,6 @@
 using IcfesApp.Application.Common.Interfaces;
 using IcfesApp.Application.Common.Models;
+using IcfesApp.Application.Schools;
 using IcfesApp.Application.Schools.Dtos;
 using IcfesApp.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -10,32 +11,21 @@ public class SchoolService(IApplicationDbContext dbContext) : ISchoolService
 {
     public async Task<IReadOnlyList<SchoolDto>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        return await dbContext.Schools
-            .OrderBy(s => s.Name)
-            .Select(s => new SchoolDto
-            {
-                Id = s.Id,
-                Name = s.Name,
-                Domain = s.Domain,
-                City = s.City,
-                IsActive = s.IsActive
-            })
+        var schools = await dbContext.Schools
+            .AsNoTracking()
+            .OrderBy(school => school.Name)
             .ToListAsync(cancellationToken);
+
+        return schools.Select(school => school.ToDto()).ToList();
     }
 
     public async Task<SchoolDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await dbContext.Schools
-            .Where(s => s.Id == id)
-            .Select(s => new SchoolDto
-            {
-                Id = s.Id,
-                Name = s.Name,
-                Domain = s.Domain,
-                City = s.City,
-                IsActive = s.IsActive
-            })
-            .FirstOrDefaultAsync(cancellationToken);
+        var school = await dbContext.Schools
+            .AsNoTracking()
+            .FirstOrDefaultAsync(school => school.Id == id, cancellationToken);
+
+        return school?.ToDto();
     }
 
     public async Task<SchoolDto> CreateAsync(CreateSchoolRequest request, CancellationToken cancellationToken = default)
@@ -51,19 +41,12 @@ public class SchoolService(IApplicationDbContext dbContext) : ISchoolService
         dbContext.Schools.Add(school);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return new SchoolDto
-        {
-            Id = school.Id,
-            Name = school.Name,
-            Domain = school.Domain,
-            City = school.City,
-            IsActive = school.IsActive
-        };
+        return school.ToDto();
     }
 
     public async Task<Result> UpdateAsync(Guid id, UpdateSchoolRequest request, CancellationToken cancellationToken = default)
     {
-        var school = await dbContext.Schools.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+        var school = await dbContext.Schools.FirstOrDefaultAsync(school => school.Id == id, cancellationToken);
         if (school is null)
         {
             return Result.NotFound();
@@ -81,7 +64,7 @@ public class SchoolService(IApplicationDbContext dbContext) : ISchoolService
 
     public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var school = await dbContext.Schools.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+        var school = await dbContext.Schools.FirstOrDefaultAsync(school => school.Id == id, cancellationToken);
         if (school is null)
         {
             return Result.NotFound();

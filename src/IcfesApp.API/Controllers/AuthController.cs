@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using IcfesApp.Application.Auth;
 using IcfesApp.Application.Auth.Dtos;
 using IcfesApp.Application.Common.Interfaces;
@@ -8,10 +7,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace IcfesApp.API.Controllers;
 
-[ApiController]
 [Route("api/auth")]
-public class AuthController(IAuthService authService) : ControllerBase
+public class AuthController(IAuthService authService) : ApiControllerBase
 {
+    private const string BearerTokenType = "Bearer";
+
     // ─────────────────────────────────────────────────────────────
     // Registro
     // ─────────────────────────────────────────────────────────────
@@ -22,9 +22,11 @@ public class AuthController(IAuthService authService) : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Register(RegisterRequest request, CancellationToken cancellationToken)
     {
-        var result = await authService.RegisterAsync(request, cancellationToken);
-        if (!result.Succeeded)
-            return BadRequest(new { errors = result.Errors });
+        var registrationResult = await authService.RegisterAsync(request, cancellationToken);
+        if (!registrationResult.Succeeded)
+        {
+            return ToErrorResponse(registrationResult);
+        }
 
         return Ok(new RegistrationPendingResponse
         {
@@ -32,19 +34,16 @@ public class AuthController(IAuthService authService) : ControllerBase
         });
     }
 
-    /// <summary>Registro de staff (Teacher/Admin). Solo accesible por un Admin.</summary>
+    /// <summary>
+    /// Registro de staff (Teacher/Admin). Solo accesible por un Admin.
+    /// Devuelve el usuario creado; no emite tokens para él (el admin sigue con su propia sesión).
+    /// </summary>
     [HttpPost("register-staff")]
     [Authorize(Policy = Policies.RequireAdmin)]
-    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(UserInfoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> RegisterStaff(RegisterStaffRequest request, CancellationToken cancellationToken)
-    {
-        var result = await authService.RegisterStaffAsync(request, cancellationToken);
-        if (!result.Succeeded)
-            return BadRequest(new { errors = result.Errors });
-
-        return Ok(MapToAuthResponse(result));
-    }
+        => ToActionResult(await authService.RegisterStaffAsync(request, cancellationToken));
 
     // ─────────────────────────────────────────────────────────────
     // Sesión
@@ -57,51 +56,27 @@ public class AuthController(IAuthService authService) : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status423Locked)]
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
-    {
-        var result = await authService.LoginAsync(request, cancellationToken);
+        => ToSignInResponse(await authService.LoginAsync(request, cancellationToken));
 
-        if (result.Succeeded)
-        {
-            if (result.RequiresTwoFactor)
-            {
-                return Ok(new TwoFactorRequiredResponse
-                {
-                    TwoFactorToken = result.TwoFactorToken!
-                });
-            }
-            return Ok(MapToAuthResponse(result));
-        }
-
-        if (result.Errors.Any(e => e.Contains("confirmar tu correo", StringComparison.OrdinalIgnoreCase)))
-            return StatusCode(StatusCodes.Status403Forbidden, new { errors = result.Errors });
-
-        if (result.Errors.Any(e => e.Contains("bloqueada", StringComparison.OrdinalIgnoreCase)))
-            return StatusCode(StatusCodes.Status423Locked, new { errors = result.Errors });
-
-        return Unauthorized(new { errors = result.Errors });
-    }
+    [HttpPost("google")]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(TwoFactorRequiredResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GoogleLogin(GoogleLoginRequest request, CancellationToken cancellationToken)
+        => ToSignInResponse(await authService.GoogleLoginAsync(request.IdToken, cancellationToken));
 
     /// <summary>
-    /// Devuelve los datos públicos del usuario autenticado actual.
+    /// Devuelve los datos actualizados del usuario autenticado (leídos de la base de datos).
     /// Se usa al recargar la app para obtener estado fresco sin rotar tokens.
     /// </summary>
     [HttpGet("session")]
     [Authorize]
     [ProducesResponseType(typeof(UserInfoDto), StatusCodes.Status200OK)]
-    public IActionResult Session()
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Session(CancellationToken cancellationToken)
     {
-        var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
-        var typeClaim = User.FindFirstValue("user_type") ?? "Particular";
-
-        return Ok(new UserInfoDto
-        {
-            Id = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!),
-            Email = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty,
-            FirstName = string.Empty,
-            LastName = string.Empty,
-            Roles = roles,
-            Type = typeClaim
-        });
+        var currentUser = await authService.GetCurrentUserAsync(CurrentUserId, cancellationToken);
+        return currentUser is null ? Unauthorized() : Ok(currentUser);
     }
 
     [HttpPost("refresh")]
@@ -109,17 +84,19 @@ public class AuthController(IAuthService authService) : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Refresh(RefreshRequest request, CancellationToken cancellationToken)
     {
-        var result = await authService.RefreshAsync(request.RefreshToken, cancellationToken);
-        if (!result.Succeeded)
-            return Unauthorized(new { errors = result.Errors });
+        var refreshResult = await authService.RefreshAsync(request.RefreshToken, cancellationToken);
+        if (!refreshResult.Succeeded)
+        {
+            return ToErrorResponse(refreshResult);
+        }
 
         return Ok(new AuthSessionResponse
         {
-            TokenType = "Bearer",
-            AccessToken = result.AccessToken!,
-            ExpiresAtUtc = result.AccessTokenExpiresAtUtc!.Value,
-            RefreshToken = result.RefreshToken!,
-            RefreshTokenExpiresAtUtc = result.RefreshTokenExpiresAtUtc!.Value
+            TokenType = BearerTokenType,
+            AccessToken = refreshResult.AccessToken!,
+            ExpiresAtUtc = refreshResult.AccessTokenExpiresAtUtc!.Value,
+            RefreshToken = refreshResult.RefreshToken!,
+            RefreshTokenExpiresAtUtc = refreshResult.RefreshTokenExpiresAtUtc!.Value
         });
     }
 
@@ -145,10 +122,10 @@ public class AuthController(IAuthService authService) : ControllerBase
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword(ResetPasswordRequest request, CancellationToken cancellationToken)
     {
-        var result = await authService.ResetPasswordAsync(request, cancellationToken);
-        return result.Succeeded
+        var resetPasswordResult = await authService.ResetPasswordAsync(request, cancellationToken);
+        return resetPasswordResult.Succeeded
             ? Ok(new { message = "Contraseña restablecida correctamente. Ya puedes iniciar sesión." })
-            : BadRequest(new { errors = result.Errors });
+            : ToErrorResponse(resetPasswordResult);
     }
 
     /// <summary>
@@ -160,10 +137,10 @@ public class AuthController(IAuthService authService) : ControllerBase
     [Authorize]
     public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, CancellationToken cancellationToken)
     {
-        var result = await authService.ChangePasswordAsync(CurrentUserId, request, cancellationToken);
-        return result.Succeeded
+        var changePasswordResult = await authService.ChangePasswordAsync(CurrentUserId, request, cancellationToken);
+        return changePasswordResult.Succeeded
             ? Ok(new { message = "Contraseña actualizada correctamente. Por seguridad, deberás iniciar sesión de nuevo en otros dispositivos." })
-            : BadRequest(new { errors = result.Errors });
+            : ToErrorResponse(changePasswordResult);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -173,10 +150,10 @@ public class AuthController(IAuthService authService) : ControllerBase
     [HttpPost("confirm-email")]
     public async Task<IActionResult> ConfirmEmail(ConfirmEmailRequest request, CancellationToken cancellationToken)
     {
-        var result = await authService.ConfirmEmailAsync(request, cancellationToken);
-        return result.Succeeded
+        var confirmEmailResult = await authService.ConfirmEmailAsync(request, cancellationToken);
+        return confirmEmailResult.Succeeded
             ? Ok(new { message = "Correo confirmado correctamente. Ya puedes iniciar sesión." })
-            : BadRequest(new { errors = result.Errors });
+            : ToErrorResponse(confirmEmailResult);
     }
 
     [HttpPost("resend-confirmation")]
@@ -187,33 +164,6 @@ public class AuthController(IAuthService authService) : ControllerBase
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Google
-    // ─────────────────────────────────────────────────────────────
-
-    [HttpPost("google")]
-    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(TwoFactorRequiredResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> GoogleLogin(GoogleLoginRequest request, CancellationToken cancellationToken)
-    {
-        var result = await authService.GoogleLoginAsync(request.IdToken, cancellationToken);
-
-        if (result.Succeeded)
-        {
-            if (result.RequiresTwoFactor)
-            {
-                return Ok(new TwoFactorRequiredResponse
-                {
-                    TwoFactorToken = result.TwoFactorToken!
-                });
-            }
-            return Ok(MapToAuthResponse(result));
-        }
-
-        return Unauthorized(new { errors = result.Errors });
-    }
-
-    // ─────────────────────────────────────────────────────────────
     // Doble factor (2FA)
     // ─────────────────────────────────────────────────────────────
 
@@ -221,52 +171,58 @@ public class AuthController(IAuthService authService) : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetTwoFactorSetup(CancellationToken cancellationToken)
     {
-        var setup = await authService.GetTwoFactorSetupAsync(CurrentUserId, cancellationToken);
-        return setup is null ? NotFound() : Ok(setup);
+        var twoFactorSetup = await authService.GetTwoFactorSetupAsync(CurrentUserId, cancellationToken);
+        return twoFactorSetup is null ? NotFound() : Ok(twoFactorSetup);
     }
 
     [HttpPost("2fa/enable")]
     [Authorize]
     public async Task<IActionResult> EnableTwoFactor(EnableTwoFactorRequest request, CancellationToken cancellationToken)
     {
-        var result = await authService.EnableTwoFactorAsync(CurrentUserId, request.Code, cancellationToken);
-        return result.Succeeded
-            ? Ok(new { recoveryCodes = result.Value })
-            : BadRequest(new { errors = result.Errors });
+        var enableTwoFactorResult = await authService.EnableTwoFactorAsync(CurrentUserId, request.Code, cancellationToken);
+        return enableTwoFactorResult.Succeeded
+            ? Ok(new { recoveryCodes = enableTwoFactorResult.Value })
+            : ToErrorResponse(enableTwoFactorResult);
     }
 
     [HttpPost("2fa/disable")]
     [Authorize]
     public async Task<IActionResult> DisableTwoFactor(DisableTwoFactorRequest request, CancellationToken cancellationToken)
-    {
-        var result = await authService.DisableTwoFactorAsync(CurrentUserId, request.Code, cancellationToken);
-        return result.Succeeded ? NoContent() : BadRequest(new { errors = result.Errors });
-    }
+        => ToActionResult(await authService.DisableTwoFactorAsync(CurrentUserId, request.Code, cancellationToken));
 
     [HttpPost("2fa/verify")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> VerifyTwoFactor(TwoFactorLoginRequest request, CancellationToken cancellationToken)
-    {
-        var result = await authService.VerifyTwoFactorAsync(request.TwoFactorToken, request.Code, cancellationToken);
-        return result.Succeeded
-            ? Ok(MapToAuthResponse(result))
-            : Unauthorized(new { errors = result.Errors });
-    }
+        => ToSignInResponse(await authService.VerifyTwoFactorAsync(request.TwoFactorToken, request.Code, cancellationToken));
 
     // ─────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────
 
-    private Guid CurrentUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-
-    private static AuthResponse MapToAuthResponse(AuthResult result) => new()
+    /// <summary>
+    /// Respuesta común de los inicios de sesión: error, "falta el código 2FA" o sesión completa.
+    /// </summary>
+    private IActionResult ToSignInResponse(AuthResult signInResult)
     {
-        TokenType = "Bearer",
-        AccessToken = result.AccessToken!,
-        ExpiresAtUtc = result.AccessTokenExpiresAtUtc!.Value,
-        RefreshToken = result.RefreshToken!,
-        RefreshTokenExpiresAtUtc = result.RefreshTokenExpiresAtUtc!.Value,
-        User = result.User!
-    };
+        if (!signInResult.Succeeded)
+        {
+            return ToErrorResponse(signInResult);
+        }
+
+        if (signInResult.RequiresTwoFactor)
+        {
+            return Ok(new TwoFactorRequiredResponse { TwoFactorToken = signInResult.TwoFactorToken! });
+        }
+
+        return Ok(new AuthResponse
+        {
+            TokenType = BearerTokenType,
+            AccessToken = signInResult.AccessToken!,
+            ExpiresAtUtc = signInResult.AccessTokenExpiresAtUtc!.Value,
+            RefreshToken = signInResult.RefreshToken!,
+            RefreshTokenExpiresAtUtc = signInResult.RefreshTokenExpiresAtUtc!.Value,
+            User = signInResult.User!
+        });
+    }
 }

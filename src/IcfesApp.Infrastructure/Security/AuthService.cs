@@ -28,6 +28,8 @@ public class AuthService(
     IOptions<GoogleSettings> googleOptions,
     ILogger<AuthService> logger) : IAuthService
 {
+    private const int RecoveryCodeCount = 10;
+
     public async Task<AuthResult> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
         // 1. Si viene código de invitación, validarlo antes de crear el usuario.
@@ -65,11 +67,11 @@ public class AuthService(
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
-            var result = await userManager.CreateAsync(user, request.Password);
-            if (!result.Succeeded)
+            var createUserResult = await userManager.CreateAsync(user, request.Password);
+            if (!createUserResult.Succeeded)
             {
                 await transaction.RollbackAsync(cancellationToken);
-                return AuthResult.Failed(result.Errors.Select(e => e.Description));
+                return AuthResult.Failed(DescribeErrors(createUserResult));
             }
 
             await userManager.AddToRoleAsync(user, Roles.Student);
@@ -93,14 +95,15 @@ public class AuthService(
 
         return AuthResult.RegistrationPending();
     }
-    public async Task<AuthResult> RegisterStaffAsync(RegisterStaffRequest request, CancellationToken cancellationToken = default)
+
+    public async Task<Result<UserInfoDto>> RegisterStaffAsync(RegisterStaffRequest request, CancellationToken cancellationToken = default)
     {
         if (request.Role != Roles.Teacher && request.Role != Roles.Admin)
         {
-            return AuthResult.Failed([$"El rol debe ser '{Roles.Teacher}' o '{Roles.Admin}'."]);
+            return Result<UserInfoDto>.Failed([$"El rol debe ser '{Roles.Teacher}' o '{Roles.Admin}'."]);
         }
 
-        var user = new ApplicationUser
+        var staffUser = new ApplicationUser
         {
             UserName = request.Email,
             Email = request.Email,
@@ -109,113 +112,120 @@ public class AuthService(
             EmailConfirmed = true
         };
 
-        var result = await userManager.CreateAsync(user, request.Password);
-        if (!result.Succeeded)
+        var createUserResult = await userManager.CreateAsync(staffUser, request.Password);
+        if (!createUserResult.Succeeded)
         {
-            return AuthResult.Failed(result.Errors.Select(e => e.Description));
+            return Result<UserInfoDto>.Failed(DescribeErrors(createUserResult));
         }
 
-        await userManager.AddToRoleAsync(user, request.Role);
-        return await IssueTokensAsync(user, cancellationToken, includeUser: true);
+        await userManager.AddToRoleAsync(staffUser, request.Role);
+        return Result<UserInfoDto>.Success(BuildUserInfo(staffUser, [request.Role]));
     }
 
     public async Task<AuthResult> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
     {
+        const string invalidCredentialsMessage = "Credenciales inválidas.";
+
         var user = await userManager.FindByEmailAsync(request.Email);
         if (user is null)
         {
-            return AuthResult.Failed(["Credenciales inválidas."]);
+            return AuthResult.Failed([invalidCredentialsMessage], ErrorType.Unauthorized);
         }
 
-        var signInResult = await signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
-        if (!signInResult.Succeeded)
+        var passwordCheckResult = await signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
+        if (passwordCheckResult.IsLockedOut)
         {
-            return AuthResult.Failed(signInResult.IsLockedOut
-                ? ["Cuenta bloqueada temporalmente por múltiples intentos fallidos."]
-                : ["Credenciales inválidas."]);
+            return AuthResult.Failed(["Cuenta bloqueada temporalmente por múltiples intentos fallidos."], ErrorType.Locked);
+        }
+
+        if (!passwordCheckResult.Succeeded)
+        {
+            return AuthResult.Failed([invalidCredentialsMessage], ErrorType.Unauthorized);
         }
 
         if (!await userManager.IsEmailConfirmedAsync(user))
         {
-            return AuthResult.Failed(["Debes confirmar tu correo antes de iniciar sesión. Revisa tu bandeja de entrada."]);
+            return AuthResult.Failed(
+                ["Debes confirmar tu correo antes de iniciar sesión. Revisa tu bandeja de entrada."],
+                ErrorType.Forbidden);
         }
 
-        if (await userManager.GetTwoFactorEnabledAsync(user))
+        return await CompleteSignInAsync(user, cancellationToken);
+    }
+
+    public async Task<UserInfoDto?> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
         {
-            var challengeToken = jwtTokenService.CreateTwoFactorChallengeToken(user.Id);
-            return AuthResult.TwoFactorRequired(challengeToken);
+            return null;
         }
 
-        return await IssueTokensAsync(user, cancellationToken, includeUser: true);
+        var roles = await userManager.GetRolesAsync(user);
+        return BuildUserInfo(user, roles);
     }
 
     public async Task<AuthResult> GoogleLoginAsync(string idToken, CancellationToken cancellationToken = default)
     {
-        GoogleJsonWebSignature.Payload payload;
+        GoogleJsonWebSignature.Payload googlePayload;
         try
         {
-            payload = await GoogleJsonWebSignature.ValidateAsync(idToken, new GoogleJsonWebSignature.ValidationSettings
+            googlePayload = await GoogleJsonWebSignature.ValidateAsync(idToken, new GoogleJsonWebSignature.ValidationSettings
             {
                 Audience = [googleOptions.Value.ClientId]
             });
         }
         catch (InvalidJwtException)
         {
-            return AuthResult.Failed(["Token de Google inválido."]);
+            return AuthResult.Failed(["Token de Google inválido."], ErrorType.Unauthorized);
         }
 
-        if (!payload.EmailVerified)
+        if (!googlePayload.EmailVerified)
         {
-            return AuthResult.Failed(["El correo de la cuenta de Google no está verificado."]);
+            return AuthResult.Failed(["El correo de la cuenta de Google no está verificado."], ErrorType.Unauthorized);
         }
 
-        var user = await userManager.FindByEmailAsync(payload.Email);
+        var user = await userManager.FindByEmailAsync(googlePayload.Email);
         if (user is null)
         {
             user = new ApplicationUser
             {
-                UserName = payload.Email,
-                Email = payload.Email,
-                FirstName = string.IsNullOrWhiteSpace(payload.GivenName) ? payload.Email : payload.GivenName,
-                LastName = payload.FamilyName ?? string.Empty,
+                UserName = googlePayload.Email,
+                Email = googlePayload.Email,
+                FirstName = string.IsNullOrWhiteSpace(googlePayload.GivenName) ? googlePayload.Email : googlePayload.GivenName,
+                LastName = googlePayload.FamilyName ?? string.Empty,
                 EmailConfirmed = true
             };
 
-            var createResult = await userManager.CreateAsync(user);
-            if (!createResult.Succeeded)
+            var createUserResult = await userManager.CreateAsync(user);
+            if (!createUserResult.Succeeded)
             {
-                return AuthResult.Failed(createResult.Errors.Select(e => e.Description));
+                return AuthResult.Failed(DescribeErrors(createUserResult), ErrorType.Unauthorized);
             }
 
             await userManager.AddToRoleAsync(user, Roles.Student);
         }
 
-        if (await userManager.GetTwoFactorEnabledAsync(user))
-        {
-            var challengeToken = jwtTokenService.CreateTwoFactorChallengeToken(user.Id);
-            return AuthResult.TwoFactorRequired(challengeToken);
-        }
-
-        return await IssueTokensAsync(user, cancellationToken, includeUser: true);
+        return await CompleteSignInAsync(user, cancellationToken);
     }
 
     public async Task<AuthResult> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)
     {
-        var stored = await dbContext.RefreshTokens
-            .FirstOrDefaultAsync(rt => rt.Token == refreshToken, cancellationToken);
+        var storedRefreshToken = await dbContext.RefreshTokens
+            .FirstOrDefaultAsync(token => token.Token == refreshToken, cancellationToken);
 
-        if (stored is null || !stored.IsActive)
+        if (storedRefreshToken is null || !storedRefreshToken.IsActive)
         {
-            return AuthResult.Failed(["Refresh token inválido o expirado."]);
+            return AuthResult.Failed(["Refresh token inválido o expirado."], ErrorType.Unauthorized);
         }
 
-        var user = await userManager.FindByIdAsync(stored.UserId.ToString());
+        var user = await userManager.FindByIdAsync(storedRefreshToken.UserId.ToString());
         if (user is null)
         {
-            return AuthResult.Failed(["Usuario no encontrado."]);
+            return AuthResult.Failed(["Usuario no encontrado."], ErrorType.Unauthorized);
         }
 
-        stored.RevokedAtUtc = DateTime.UtcNow;
+        storedRefreshToken.RevokedAtUtc = DateTime.UtcNow;
         return await IssueTokensAsync(user, cancellationToken, includeUser: false);
     }
 
@@ -239,10 +249,10 @@ public class AuthService(
             return;
         }
 
-        var token = await userManager.GeneratePasswordResetTokenAsync(user);
-        var resetLink = $"{emailOptions.Value.ResetPasswordUrlTemplate}?email={WebUtility.UrlEncode(request.Email)}&token={WebUtility.UrlEncode(token)}";
+        var passwordResetToken = await userManager.GeneratePasswordResetTokenAsync(user);
+        var resetLink = $"{emailOptions.Value.ResetPasswordUrlTemplate}?email={WebUtility.UrlEncode(request.Email)}&token={WebUtility.UrlEncode(passwordResetToken)}";
 
-        var body = $"""
+        var emailHtmlBody = $"""
             <p>Hola {WebUtility.HtmlEncode(user.FirstName)},</p>
             <p>Recibimos una solicitud para restablecer tu contraseña en IcfesApp.</p>
             <p><a href="{resetLink}">Haz clic aquí para crear una nueva contraseña</a></p>
@@ -251,35 +261,35 @@ public class AuthService(
 
         try
         {
-            await emailSender.SendAsync(request.Email, "Recupera tu contraseña - IcfesApp", body, cancellationToken);
+            await emailSender.SendAsync(request.Email, "Recupera tu contraseña - IcfesApp", emailHtmlBody, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            logger.LogError(ex,
+            logger.LogError(exception,
                 "Falló el envío del correo de recuperación para {Email}. El usuario puede solicitar un nuevo enlace.",
                 request.Email);
         }
     }
 
-    public async Task<OperationResult> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
     {
         var user = await userManager.FindByEmailAsync(request.Email);
         if (user is null)
         {
-            return OperationResult.Failed(["Token o usuario inválido."]);
+            return Result.Failed(["Token o usuario inválido."]);
         }
 
-        var result = await userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
-        if (!result.Succeeded)
+        var resetPasswordResult = await userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
+        if (!resetPasswordResult.Succeeded)
         {
-            return OperationResult.Failed(result.Errors.Select(e => e.Description));
+            return Result.Failed(DescribeErrors(resetPasswordResult));
         }
 
         await RevokeAllRefreshTokensAsync(user.Id, cancellationToken);
-        return OperationResult.Success();
+        return Result.Success();
     }
 
-    public async Task<OperationResult> ChangePasswordAsync(
+    public async Task<Result> ChangePasswordAsync(
         Guid userId,
         ChangePasswordRequest request,
         CancellationToken cancellationToken = default)
@@ -287,34 +297,34 @@ public class AuthService(
         var user = await userManager.FindByIdAsync(userId.ToString());
         if (user is null)
         {
-            return OperationResult.Failed(["Usuario no encontrado."]);
+            return Result.Failed(["Usuario no encontrado."]);
         }
 
         var isCurrentPasswordValid = await userManager.CheckPasswordAsync(user, request.CurrentPassword);
         if (!isCurrentPasswordValid)
         {
-            return OperationResult.Failed(["La contraseña actual es incorrecta."]);
+            return Result.Failed(["La contraseña actual es incorrecta."]);
         }
 
         var isSamePassword = await userManager.CheckPasswordAsync(user, request.NewPassword);
         if (isSamePassword)
         {
-            return OperationResult.Failed(["La nueva contraseña debe ser diferente a la actual."]);
+            return Result.Failed(["La nueva contraseña debe ser diferente a la actual."]);
         }
 
-        var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
-        if (!result.Succeeded)
+        var changePasswordResult = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
+        if (!changePasswordResult.Succeeded)
         {
-            return OperationResult.Failed(result.Errors.Select(e => e.Description));
+            return Result.Failed(DescribeErrors(changePasswordResult));
         }
 
-        var revokedCount = await RevokeAllRefreshTokensAsync(user.Id, cancellationToken);
+        var revokedRefreshTokenCount = await RevokeAllRefreshTokensAsync(user.Id, cancellationToken);
 
         logger.LogInformation(
             "Usuario {UserId} cambió su contraseña. {RevokedCount} refresh tokens revocados por seguridad.",
-            user.Id, revokedCount);
+            user.Id, revokedRefreshTokenCount);
 
-        return OperationResult.Success();
+        return Result.Success();
     }
 
     public async Task<TwoFactorSetupDto?> GetTwoFactorSetupAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -325,18 +335,18 @@ public class AuthService(
             return null;
         }
 
-        var key = await userManager.GetAuthenticatorKeyAsync(user);
-        if (string.IsNullOrEmpty(key))
+        var authenticatorKey = await userManager.GetAuthenticatorKeyAsync(user);
+        if (string.IsNullOrEmpty(authenticatorKey))
         {
             await userManager.ResetAuthenticatorKeyAsync(user);
-            key = await userManager.GetAuthenticatorKeyAsync(user);
+            authenticatorKey = await userManager.GetAuthenticatorKeyAsync(user);
         }
 
-        var issuer = Uri.EscapeDataString("IcfesApp");
-        var email = Uri.EscapeDataString(user.Email!);
-        var authenticatorUri = $"otpauth://totp/{issuer}:{email}?secret={key}&issuer={issuer}&digits=6";
+        var encodedIssuer = Uri.EscapeDataString("IcfesApp");
+        var encodedEmail = Uri.EscapeDataString(user.Email!);
+        var authenticatorUri = $"otpauth://totp/{encodedIssuer}:{encodedEmail}?secret={authenticatorKey}&issuer={encodedIssuer}&digits=6";
 
-        return new TwoFactorSetupDto { SharedKey = FormatKey(key!), AuthenticatorUri = authenticatorUri };
+        return new TwoFactorSetupDto { SharedKey = FormatKey(authenticatorKey!), AuthenticatorUri = authenticatorUri };
     }
 
     public async Task<Result<IReadOnlyList<string>>> EnableTwoFactorAsync(Guid userId, string code, CancellationToken cancellationToken = default)
@@ -347,36 +357,36 @@ public class AuthService(
             return Result<IReadOnlyList<string>>.Failed(["Usuario no encontrado."]);
         }
 
-        var isValid = await userManager.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultAuthenticatorProvider, code);
-        if (!isValid)
+        var isAuthenticatorCodeValid = await userManager.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultAuthenticatorProvider, code);
+        if (!isAuthenticatorCodeValid)
         {
             return Result<IReadOnlyList<string>>.Failed(["Código inválido."]);
         }
 
         await userManager.SetTwoFactorEnabledAsync(user, true);
-        var recoveryCodes = await userManager.GenerateNewTwoFactorRecoveryCodesAsync(user, 10);
+        var recoveryCodes = await userManager.GenerateNewTwoFactorRecoveryCodesAsync(user, RecoveryCodeCount);
 
         return Result<IReadOnlyList<string>>.Success(recoveryCodes?.ToList() ?? []);
     }
 
-    public async Task<OperationResult> DisableTwoFactorAsync(Guid userId, string code, CancellationToken cancellationToken = default)
+    public async Task<Result> DisableTwoFactorAsync(Guid userId, string code, CancellationToken cancellationToken = default)
     {
         var user = await userManager.FindByIdAsync(userId.ToString());
         if (user is null)
         {
-            return OperationResult.Failed(["Usuario no encontrado."]);
+            return Result.Failed(["Usuario no encontrado."]);
         }
 
-        var isValid = await userManager.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultAuthenticatorProvider, code);
-        if (!isValid)
+        var isAuthenticatorCodeValid = await userManager.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultAuthenticatorProvider, code);
+        if (!isAuthenticatorCodeValid)
         {
-            return OperationResult.Failed(["Código inválido."]);
+            return Result.Failed(["Código inválido."]);
         }
 
         await userManager.SetTwoFactorEnabledAsync(user, false);
         await userManager.ResetAuthenticatorKeyAsync(user);
 
-        return OperationResult.Success();
+        return Result.Success();
     }
 
     public async Task<AuthResult> VerifyTwoFactorAsync(string twoFactorToken, string code, CancellationToken cancellationToken = default)
@@ -384,40 +394,40 @@ public class AuthService(
         var userId = jwtTokenService.ValidateTwoFactorChallengeToken(twoFactorToken);
         if (userId is null)
         {
-            return AuthResult.Failed(["Token de doble factor inválido o expirado."]);
+            return AuthResult.Failed(["Token de doble factor inválido o expirado."], ErrorType.Unauthorized);
         }
 
         var user = await userManager.FindByIdAsync(userId.Value.ToString());
         if (user is null)
         {
-            return AuthResult.Failed(["Usuario no encontrado."]);
+            return AuthResult.Failed(["Usuario no encontrado."], ErrorType.Unauthorized);
         }
 
-        var isValidCode = await userManager.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultAuthenticatorProvider, code);
-        if (!isValidCode)
+        var isAuthenticatorCodeValid = await userManager.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultAuthenticatorProvider, code);
+        if (!isAuthenticatorCodeValid)
         {
-            var recoveryResult = await userManager.RedeemTwoFactorRecoveryCodeAsync(user, code);
-            if (!recoveryResult.Succeeded)
+            var redeemRecoveryCodeResult = await userManager.RedeemTwoFactorRecoveryCodeAsync(user, code);
+            if (!redeemRecoveryCodeResult.Succeeded)
             {
-                return AuthResult.Failed(["Código inválido."]);
+                return AuthResult.Failed(["Código inválido."], ErrorType.Unauthorized);
             }
         }
 
         return await IssueTokensAsync(user, cancellationToken, includeUser: true);
     }
 
-    public async Task<OperationResult> ConfirmEmailAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result> ConfirmEmailAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default)
     {
         var user = await userManager.FindByEmailAsync(request.Email);
         if (user is null)
         {
-            return OperationResult.Failed(["Token o usuario inválido."]);
+            return Result.Failed(["Token o usuario inválido."]);
         }
 
-        var result = await userManager.ConfirmEmailAsync(user, request.Token);
-        return result.Succeeded
-            ? OperationResult.Success()
-            : OperationResult.Failed(result.Errors.Select(e => e.Description));
+        var confirmEmailResult = await userManager.ConfirmEmailAsync(user, request.Token);
+        return confirmEmailResult.Succeeded
+            ? Result.Success()
+            : Result.Failed(DescribeErrors(confirmEmailResult));
     }
 
     public async Task ResendConfirmationEmailAsync(ResendConfirmationRequest request, CancellationToken cancellationToken = default)
@@ -432,9 +442,9 @@ public class AuthService(
         {
             await SendConfirmationEmailAsync(user, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            logger.LogError(ex, "Falló el reenvío de confirmación para {Email}.", user.Email);
+            logger.LogError(exception, "Falló el reenvío de confirmación para {Email}.", user.Email);
         }
     }
 
@@ -442,33 +452,48 @@ public class AuthService(
     // Helpers privados
     // ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Último paso común de todos los inicios de sesión (correo/contraseña y Google):
+    /// si el usuario tiene 2FA se pide el código; si no, se emiten los tokens.
+    /// </summary>
+    private async Task<AuthResult> CompleteSignInAsync(ApplicationUser user, CancellationToken cancellationToken)
+    {
+        if (await userManager.GetTwoFactorEnabledAsync(user))
+        {
+            var twoFactorChallengeToken = jwtTokenService.CreateTwoFactorChallengeToken(user.Id);
+            return AuthResult.TwoFactorRequired(twoFactorChallengeToken);
+        }
+
+        return await IssueTokensAsync(user, cancellationToken, includeUser: true);
+    }
+
     private async Task<int> RevokeAllRefreshTokensAsync(Guid userId, CancellationToken cancellationToken)
     {
-        var activeTokens = await dbContext.RefreshTokens
-            .Where(rt => rt.UserId == userId && rt.RevokedAtUtc == null)
+        var activeRefreshTokens = await dbContext.RefreshTokens
+            .Where(refreshToken => refreshToken.UserId == userId && refreshToken.RevokedAtUtc == null)
             .ToListAsync(cancellationToken);
 
-        if (activeTokens.Count == 0)
+        if (activeRefreshTokens.Count == 0)
         {
             return 0;
         }
 
-        var now = DateTime.UtcNow;
-        foreach (var token in activeTokens)
+        var revokedAtUtc = DateTime.UtcNow;
+        foreach (var activeRefreshToken in activeRefreshTokens)
         {
-            token.RevokedAtUtc = now;
+            activeRefreshToken.RevokedAtUtc = revokedAtUtc;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return activeTokens.Count;
+        return activeRefreshTokens.Count;
     }
 
     private async Task SendConfirmationEmailAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
-        var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
-        var confirmLink = $"{emailOptions.Value.ConfirmEmailUrlTemplate}?email={WebUtility.UrlEncode(user.Email)}&token={WebUtility.UrlEncode(token)}";
+        var emailConfirmationToken = await userManager.GenerateEmailConfirmationTokenAsync(user);
+        var confirmLink = $"{emailOptions.Value.ConfirmEmailUrlTemplate}?email={WebUtility.UrlEncode(user.Email)}&token={WebUtility.UrlEncode(emailConfirmationToken)}";
 
-        var body = $"""
+        var emailHtmlBody = $"""
             <p>Hola {WebUtility.HtmlEncode(user.FirstName)},</p>
             <p>Gracias por registrarte en IcfesApp. Confirma tu correo para activar tu cuenta:</p>
             <p><a href="{confirmLink}">Confirmar mi correo</a></p>
@@ -477,33 +502,49 @@ public class AuthService(
 
         try
         {
-            await emailSender.SendAsync(user.Email!, "Confirma tu correo - IcfesApp", body, cancellationToken);
+            await emailSender.SendAsync(user.Email!, "Confirma tu correo - IcfesApp", emailHtmlBody, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            logger.LogError(ex,
+            logger.LogError(exception,
                 "Falló el envío del correo de confirmación para {Email}. El usuario fue creado; se puede reintentar con /api/auth/resend-confirmation.",
                 user.Email);
         }
     }
 
+    /// <summary>Separa la clave en grupos de 4 caracteres para que sea fácil de copiar a mano.</summary>
     private static string FormatKey(string unformattedKey)
     {
-        var formatted = new System.Text.StringBuilder();
+        const int groupLength = 4;
+        var formattedKey = new System.Text.StringBuilder();
         var position = 0;
-        while (position + 4 < unformattedKey.Length)
+        while (position + groupLength < unformattedKey.Length)
         {
-            formatted.Append(unformattedKey.AsSpan(position, 4)).Append(' ');
-            position += 4;
+            formattedKey.Append(unformattedKey.AsSpan(position, groupLength)).Append(' ');
+            position += groupLength;
         }
 
         if (position < unformattedKey.Length)
         {
-            formatted.Append(unformattedKey.AsSpan(position));
+            formattedKey.Append(unformattedKey.AsSpan(position));
         }
 
-        return formatted.ToString();
+        return formattedKey.ToString();
     }
+
+    private static IEnumerable<string> DescribeErrors(IdentityResult identityResult) =>
+        identityResult.Errors.Select(identityError => identityError.Description);
+
+    private static UserInfoDto BuildUserInfo(ApplicationUser user, IEnumerable<string> roles) => new()
+    {
+        Id = user.Id,
+        Email = user.Email!,
+        FirstName = user.FirstName,
+        LastName = user.LastName,
+        Roles = roles.ToList(),
+        Type = user.Type.ToString(),
+        SchoolId = user.SchoolId
+    };
 
     private async Task<AuthResult> IssueTokensAsync(
         ApplicationUser user,
@@ -511,32 +552,21 @@ public class AuthService(
         bool includeUser)
     {
         var roles = await userManager.GetRolesAsync(user);
-        var (accessToken, accessExpiresAtUtc) = jwtTokenService.CreateAccessToken(
+        var (accessToken, accessTokenExpiresAtUtc) = jwtTokenService.CreateAccessToken(
             user.Id, user.Email!, roles, user.Type);
         var refreshTokenValue = jwtTokenService.CreateRefreshToken();
-        var refreshExpiresAtUtc = DateTime.UtcNow.AddDays(jwtOptions.Value.RefreshTokenDays);
+        var refreshTokenExpiresAtUtc = DateTime.UtcNow.AddDays(jwtOptions.Value.RefreshTokenDays);
 
         dbContext.RefreshTokens.Add(new RefreshToken
         {
             Token = refreshTokenValue,
             UserId = user.Id,
-            ExpiresAtUtc = refreshExpiresAtUtc
+            ExpiresAtUtc = refreshTokenExpiresAtUtc
         });
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        UserInfoDto? userInfo = includeUser
-            ? new UserInfoDto
-            {
-                Id = user.Id,
-                Email = user.Email!,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Roles = roles.ToList(),
-                Type = user.Type.ToString(),
-                SchoolId = user.SchoolId
-            }
-            : null;
+        var userInfo = includeUser ? BuildUserInfo(user, roles) : null;
 
-        return AuthResult.Success(accessToken, accessExpiresAtUtc, refreshTokenValue, refreshExpiresAtUtc, userInfo);
+        return AuthResult.Success(accessToken, accessTokenExpiresAtUtc, refreshTokenValue, refreshTokenExpiresAtUtc, userInfo);
     }
 }

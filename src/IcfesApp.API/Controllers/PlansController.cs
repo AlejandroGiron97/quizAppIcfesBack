@@ -1,16 +1,17 @@
 ﻿using IcfesApp.Application.Common.Interfaces;
+using IcfesApp.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace IcfesApp.API.Controllers;
 
-[ApiController]
 [Route("api/plans")]
-public class PlansController(IPlanService planService) : ControllerBase
+public class PlansController(IPlanService planService) : ApiControllerBase
 {
     /// <summary>
     /// Devuelve los planes activos. Endpoint público para la página de precios.
     /// Filtra por target: "Particular" o "Institutional" (query opcional).
+    /// includeInactive solo tiene efecto para un Admin; para los demás se ignora.
     /// </summary>
     [HttpGet]
     [AllowAnonymous]
@@ -19,7 +20,8 @@ public class PlansController(IPlanService planService) : ControllerBase
         [FromQuery] bool includeInactive = false,
         CancellationToken cancellationToken = default)
     {
-        var plans = await planService.GetPlansAsync(target, includeInactive, cancellationToken);
+        var canSeeInactivePlans = includeInactive && User.IsInRole(Roles.Admin);
+        var plans = await planService.GetPlansAsync(target, canSeeInactivePlans, cancellationToken);
         return Ok(plans);
     }
 

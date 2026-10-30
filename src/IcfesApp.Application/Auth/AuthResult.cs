@@ -1,10 +1,14 @@
 using IcfesApp.Application.Auth.Dtos;
+using IcfesApp.Application.Common.Models;
 
 namespace IcfesApp.Application.Auth;
 
-public class AuthResult
+/// <summary>
+/// Resultado de un flujo de autenticación. Hereda de <see cref="Result"/> el estado de éxito,
+/// los errores y su tipo, y agrega los datos de la sesión emitida.
+/// </summary>
+public class AuthResult : Result
 {
-    public bool Succeeded { get; private init; }
     public bool RequiresEmailConfirmation { get; private init; }
     public bool RequiresTwoFactor { get; private init; }
     public string? TwoFactorToken { get; private init; }
@@ -17,8 +21,6 @@ public class AuthResult
     /// Datos del usuario. Null cuando la emisión de tokens no los incluye (ej: /refresh).
     /// </summary>
     public UserInfoDto? User { get; private init; }
-
-    public IReadOnlyList<string> Errors { get; private init; } = [];
 
     public static AuthResult Success(
         string accessToken,
@@ -48,9 +50,9 @@ public class AuthResult
         TwoFactorToken = twoFactorToken
     };
 
-    public static AuthResult Failed(IEnumerable<string> errors) => new()
+    public new static AuthResult Failed(IEnumerable<string> errors, ErrorType errorType = ErrorType.Validation) => new()
     {
-        Succeeded = false,
+        ErrorType = errorType,
         Errors = errors.ToList()
     };
 }

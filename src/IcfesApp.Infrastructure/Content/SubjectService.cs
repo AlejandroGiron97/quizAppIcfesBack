@@ -1,5 +1,6 @@
 using IcfesApp.Application.Common.Interfaces;
 using IcfesApp.Application.Common.Models;
+using IcfesApp.Application.Subjects;
 using IcfesApp.Application.Subjects.Dtos;
 using IcfesApp.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -10,18 +11,21 @@ public class SubjectService(IApplicationDbContext dbContext) : ISubjectService
 {
     public async Task<IReadOnlyList<SubjectDto>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        return await dbContext.Subjects
-            .OrderBy(s => s.Name)
-            .Select(s => new SubjectDto { Id = s.Id, Name = s.Name, Description = s.Description })
+        var subjects = await dbContext.Subjects
+            .AsNoTracking()
+            .OrderBy(subject => subject.Name)
             .ToListAsync(cancellationToken);
+
+        return subjects.Select(subject => subject.ToDto()).ToList();
     }
 
     public async Task<SubjectDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await dbContext.Subjects
-            .Where(s => s.Id == id)
-            .Select(s => new SubjectDto { Id = s.Id, Name = s.Name, Description = s.Description })
-            .FirstOrDefaultAsync(cancellationToken);
+        var subject = await dbContext.Subjects
+            .AsNoTracking()
+            .FirstOrDefaultAsync(subject => subject.Id == id, cancellationToken);
+
+        return subject?.ToDto();
     }
 
     public async Task<SubjectDto> CreateAsync(CreateSubjectRequest request, CancellationToken cancellationToken = default)
@@ -31,12 +35,12 @@ public class SubjectService(IApplicationDbContext dbContext) : ISubjectService
         dbContext.Subjects.Add(subject);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return new SubjectDto { Id = subject.Id, Name = subject.Name, Description = subject.Description };
+        return subject.ToDto();
     }
 
     public async Task<Result> UpdateAsync(Guid id, UpdateSubjectRequest request, CancellationToken cancellationToken = default)
     {
-        var subject = await dbContext.Subjects.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+        var subject = await dbContext.Subjects.FirstOrDefaultAsync(subject => subject.Id == id, cancellationToken);
         if (subject is null)
         {
             return Result.NotFound();
@@ -52,7 +56,7 @@ public class SubjectService(IApplicationDbContext dbContext) : ISubjectService
 
     public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var subject = await dbContext.Subjects.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+        var subject = await dbContext.Subjects.FirstOrDefaultAsync(subject => subject.Id == id, cancellationToken);
         if (subject is null)
         {
             return Result.NotFound();

@@ -6,69 +6,70 @@ using Microsoft.EntityFrameworkCore;
 
 namespace IcfesApp.Infrastructure.Content;
 
+/// <summary>
+/// Usa ApplicationDbContext (y no IApplicationDbContext) porque necesita leer usuarios y roles,
+/// que pertenecen a Identity y viven en Infrastructure.
+/// </summary>
 public class ReportService(ApplicationDbContext dbContext) : IReportService
 {
     public async Task<ReportResponseDto> GetStudentsReportAsync(Guid teacherId, CancellationToken cancellationToken = default)
     {
-        var response = new ReportResponseDto();
+        var report = new ReportResponseDto();
 
-        // 1. Obtener la institución del profesor
         var teacher = await dbContext.Users
-            .Include(u => u.School)
             .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Id == teacherId, cancellationToken);
+            .Include(user => user.School)
+            .FirstOrDefaultAsync(user => user.Id == teacherId, cancellationToken);
 
-        if (teacher?.SchoolId == null)
+        if (teacher?.SchoolId is null)
         {
-            return response;
+            return report;
         }
 
-        response.InstitutionName = teacher.School?.Name;
+        report.InstitutionName = teacher.School?.Name;
 
-        // Buscar el ID del rol "Student" para filtrar
         var studentRoleId = await dbContext.Roles
-            .Where(r => r.Name == Roles.Student)
-            .Select(r => r.Id)
+            .Where(role => role.Name == Roles.Student)
+            .Select(role => role.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
-        // 2. Buscar a los usuarios de esa institución que tengan el rol Student
-        var students = await dbContext.Users
+        var studentsWithAnswerCounts = await dbContext.Users
             .AsNoTracking()
-            .Where(u => u.SchoolId == teacher.SchoolId)
-            .Where(u => dbContext.UserRoles.Any(ur => ur.UserId == u.Id && ur.RoleId == studentRoleId))
-            .Select(u => new
+            .Where(user => user.SchoolId == teacher.SchoolId)
+            .Where(user => dbContext.UserRoles.Any(userRole => userRole.UserId == user.Id && userRole.RoleId == studentRoleId))
+            .Select(student => new
             {
-                u.Id,
-                u.FirstName,
-                u.LastName,
-                u.Email,
+                student.Id,
+                student.FirstName,
+                student.LastName,
+                student.Email,
                 TotalAnswered = dbContext.PracticeSessions
-                    .Where(ps => ps.StudentUserId == u.Id)
-                    .SelectMany(ps => ps.Answers)
-                    .Count(a => a.SelectedOptionId != null),
+                    .Where(practiceSession => practiceSession.StudentUserId == student.Id)
+                    .SelectMany(practiceSession => practiceSession.Answers)
+                    .Count(answer => answer.SelectedOptionId != null),
                 CorrectAnswers = dbContext.PracticeSessions
-                    .Where(ps => ps.StudentUserId == u.Id)
-                    .SelectMany(ps => ps.Answers)
-                    .Count(a => a.IsCorrect)
+                    .Where(practiceSession => practiceSession.StudentUserId == student.Id)
+                    .SelectMany(practiceSession => practiceSession.Answers)
+                    .Count(answer => answer.IsCorrect)
             })
             .ToListAsync(cancellationToken);
 
-        // 3. Calcular porcentajes
-        response.Students = students.Select(s => new StudentReportDto
-        {
-            StudentId = s.Id,
-            FirstName = s.FirstName,
-            LastName = s.LastName,
-            Email = s.Email ?? string.Empty,
-            TotalAnswered = s.TotalAnswered,
-            CorrectAnswers = s.CorrectAnswers,
-            ScorePercentage = s.TotalAnswered == 0
-                ? 0
-                : Math.Round((double)s.CorrectAnswers / s.TotalAnswered * 100, 1)
-        })
-        .OrderByDescending(r => r.ScorePercentage)
-        .ToList();
+        report.Students = studentsWithAnswerCounts
+            .Select(student => new StudentReportDto
+            {
+                StudentId = student.Id,
+                FirstName = student.FirstName,
+                LastName = student.LastName,
+                Email = student.Email ?? string.Empty,
+                TotalAnswered = student.TotalAnswered,
+                CorrectAnswers = student.CorrectAnswers,
+                ScorePercentage = student.TotalAnswered == 0
+                    ? 0
+                    : Math.Round((double)student.CorrectAnswers / student.TotalAnswered * 100, 1)
+            })
+            .OrderByDescending(studentReport => studentReport.ScorePercentage)
+            .ToList();
 
-        return response;
+        return report;
     }
 }

@@ -88,16 +88,22 @@ app.UseAuthorization();
 app.MapControllers();
 
 // ─────────────────────────────────────────────────────────────
-// 3. Seeding inicial
+// 3. Migraciones y datos iniciales
+//    - Roles y admin por defecto: en todos los entornos (la app no funciona sin ellos).
+//    - Datos demo (usuarios con contraseña conocida): SOLO en Development.
 // ─────────────────────────────────────────────────────────────
 
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    await db.Database.MigrateAsync();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await dbContext.Database.MigrateAsync();
 
     await RoleSeeder.SeedAsync(scope.ServiceProvider);
-    await DataSeeder.SeedAsync(scope.ServiceProvider);
+
+    if (app.Environment.IsDevelopment())
+    {
+        await DataSeeder.SeedAsync(scope.ServiceProvider);
+    }
 }
 
 app.Run();
