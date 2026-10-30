@@ -3,8 +3,8 @@ using IcfesApp.Domain.Enums;
 namespace IcfesApp.Application.Questions.Dtos;
 
 /// <summary>
-/// Pregunta completa, incluida la opción correcta. Solo la ven profesores y administradores;
-/// el estudiante ve las preguntas a través de la sesión de práctica (PracticeQuestionDto).
+/// Full question, including the correct option. Only teachers and administrators see it;
+/// students see questions through the practice session (PracticeQuestionDto).
 /// </summary>
 public class QuestionDto
 {

@@ -3,10 +3,10 @@ using IcfesApp.Domain.Entities;
 
 namespace IcfesApp.Application.Questions;
 
-/// <summary>Convierte entidades de preguntas a DTOs. Único lugar donde se arma un QuestionDto.</summary>
+/// <summary>Converts question entities to DTOs. The only place where a QuestionDto is built.</summary>
 public static class QuestionMappings
 {
-    /// <remarks>Requiere que <see cref="Question.Subject"/> y <see cref="Question.Options"/> estén cargados.</remarks>
+    /// <remarks>Requires <see cref="Question.Subject"/> and <see cref="Question.Options"/> to be loaded.</remarks>
     public static QuestionDto ToDto(this Question question) => new()
     {
         Id = question.Id,

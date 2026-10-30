@@ -8,13 +8,13 @@ public class CreateQuestionRequest
     [Required]
     public required string Text { get; set; }
 
-    /// <summary>Imagen opcional del enunciado (mapas, gráficas, tablas...).</summary>
+    /// <summary>Optional image for the statement (maps, charts, tables...).</summary>
     public string? ImageUrl { get; set; }
 
     [Required]
     public required string Justification { get; set; }
 
-    /// <summary>Imagen opcional de la justificación (fórmulas, procedimientos...).</summary>
+    /// <summary>Optional image for the justification (formulas, worked steps...).</summary>
     public string? JustificationImageUrl { get; set; }
 
     public QuestionDifficulty Difficulty { get; set; } = QuestionDifficulty.Medium;

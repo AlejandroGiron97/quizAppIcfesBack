@@ -128,7 +128,7 @@ public class QuestionService(IApplicationDbContext dbContext) : IQuestionService
         return Result.Success();
     }
 
-    /// <summary>Traduce la petición HTTP al builder del dominio, que es quien valida las reglas.</summary>
+    /// <summary>Maps the HTTP request to the domain builder, which is the one that validates the rules.</summary>
     private static QuestionBuilder CreateBuilderFrom(CreateQuestionRequest request)
     {
         var questionBuilder = QuestionBuilder.ForSubject(request.SubjectId)
@@ -145,10 +145,10 @@ public class QuestionService(IApplicationDbContext dbContext) : IQuestionService
     }
 
     /// <summary>
-    /// Reemplaza las opciones de una pregunta ya trackeada por EF Core.
-    /// Las nuevas opciones se agregan explícitamente con AddRange: como ya traen un Guid
-    /// (lo asigna BaseEntity), EF las marcaría como Modified en vez de Added si solo se
-    /// reasignara la navegación.
+    /// Replaces the options of a question already tracked by EF Core.
+    /// The new options are added explicitly with AddRange: since they already have a Guid
+    /// (assigned by BaseEntity), EF would mark them as Modified instead of Added if only the
+    /// navigation were reassigned.
     /// </summary>
     private void ReplaceOptions(Question existingQuestion, List<QuestionOption> newOptions)
     {

@@ -1,13 +1,13 @@
 ﻿namespace IcfesApp.Domain.Enums;
 
 /// <summary>
-/// A qué segmento va dirigido un plan.
+/// Segment a plan is aimed at.
 /// </summary>
 public enum PlanTarget
 {
-    /// <summary>Plan para usuarios que acceden individualmente (pagan autoservicio).</summary>
+    /// <summary>Plan for users who access individually (self-service payment).</summary>
     Particular = 0,
 
-    /// <summary>Plan para instituciones educativas (licencia anual, pago manual).</summary>
+    /// <summary>Plan for schools (yearly license, manual payment).</summary>
     Institutional = 1
 }

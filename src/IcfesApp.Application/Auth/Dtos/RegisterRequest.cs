@@ -17,8 +17,8 @@ public class RegisterRequest
     public required string LastName { get; set; }
 
     /// <summary>
-    /// Código de invitación opcional. Si viene y es válido, el usuario queda vinculado
-    /// a la institución del código (Type = Institutional). Si no viene, es Particular.
+    /// Optional invitation code. When present and valid, the user is linked
+    /// to the code's institution (Type = Institutional). When absent, the user is Particular.
     /// </summary>
     [MaxLength(50)]
     public string? InvitationCode { get; set; }

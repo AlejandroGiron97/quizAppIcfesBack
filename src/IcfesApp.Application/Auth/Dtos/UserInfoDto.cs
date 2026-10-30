@@ -1,8 +1,8 @@
 ﻿namespace IcfesApp.Application.Auth.Dtos;
 
 /// <summary>
-/// Datos públicos del usuario autenticado. Se incluye en cada respuesta de login/refresh
-/// para que el cliente no tenga que llamar a /session inmediatamente después.
+/// Public data of the authenticated user. Included in every login/refresh response
+/// so the client does not need to call /session right afterwards.
 /// </summary>
 public class UserInfoDto
 {
@@ -13,8 +13,8 @@ public class UserInfoDto
     public required IReadOnlyList<string> Roles { get; init; }
 
     /// <summary>
-    /// "Particular" o "Institutional". Determina si el usuario paga suscripción
-    /// o si pertenece a una institución (no paga).
+    /// "Particular" or "Institutional". Determines whether the user pays a subscription
+    /// or belongs to an institution (does not pay).
     /// </summary>
     public required string Type { get; init; }
 

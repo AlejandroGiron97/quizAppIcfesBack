@@ -5,7 +5,7 @@ namespace IcfesApp.Application.InvitationCodes;
 
 public static class InvitationCodeMappings
 {
-    /// <remarks>Requiere que <see cref="InvitationCode.Institution"/> esté cargada.</remarks>
+    /// <remarks>Requires <see cref="InvitationCode.Institution"/> to be loaded.</remarks>
     public static InvitationCodeDto ToDto(this InvitationCode invitationCode) => new()
     {
         Id = invitationCode.Id,

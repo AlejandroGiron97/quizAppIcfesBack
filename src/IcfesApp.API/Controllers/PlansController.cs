@@ -9,9 +9,9 @@ namespace IcfesApp.API.Controllers;
 public class PlansController(IPlanService planService) : ApiControllerBase
 {
     /// <summary>
-    /// Devuelve los planes activos. Endpoint público para la página de precios.
-    /// Filtra por target: "Particular" o "Institutional" (query opcional).
-    /// includeInactive solo tiene efecto para un Admin; para los demás se ignora.
+    /// Returns the active plans. Public endpoint for the pricing page.
+    /// Filters by target: "Particular" or "Institutional" (optional query).
+    /// includeInactive only takes effect for an Admin; it is ignored for everyone else.
     /// </summary>
     [HttpGet]
     [AllowAnonymous]

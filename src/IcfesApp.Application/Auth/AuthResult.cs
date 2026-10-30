@@ -4,8 +4,8 @@ using IcfesApp.Application.Common.Models;
 namespace IcfesApp.Application.Auth;
 
 /// <summary>
-/// Resultado de un flujo de autenticación. Hereda de <see cref="Result"/> el estado de éxito,
-/// los errores y su tipo, y agrega los datos de la sesión emitida.
+/// Result of an authentication flow. Inherits the success state, the errors and their type
+/// from <see cref="Result"/>, and adds the data of the issued session.
 /// </summary>
 public class AuthResult : Result
 {
@@ -18,7 +18,7 @@ public class AuthResult : Result
     public DateTime? RefreshTokenExpiresAtUtc { get; private init; }
 
     /// <summary>
-    /// Datos del usuario. Null cuando la emisión de tokens no los incluye (ej: /refresh).
+    /// User data. Null when the token issuance does not include it (e.g. /refresh).
     /// </summary>
     public UserInfoDto? User { get; private init; }
 

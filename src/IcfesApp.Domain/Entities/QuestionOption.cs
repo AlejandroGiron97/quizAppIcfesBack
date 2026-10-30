@@ -6,8 +6,8 @@ public class QuestionOption : BaseEntity
 {
     public required string Text { get; set; }
 
-    // URL de la imagen de la opción (gráficas, diagramas, etc.)
-    // Es nullable porque la mayoría de opciones solo tendrán texto.
+    // URL of the option image (charts, diagrams, etc.)
+    // Nullable because most options only have text.
     public string? ImageUrl { get; set; }
 
     public bool IsCorrect { get; set; }

@@ -11,8 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace IcfesApp.Infrastructure.Identity;
 
 /// <summary>
-/// Datos de demostración (colegios, usuarios de prueba, preguntas, sesiones, planes...).
-/// Solo se ejecuta en Development (ver Program.cs): crea usuarios con contraseña conocida.
+/// Demo data (schools, test users, questions, sessions, plans...).
+/// Only runs in Development (see Program.cs): it creates users with a known password.
 /// </summary>
 public static class DataSeeder
 {
@@ -98,25 +98,14 @@ public static class DataSeeder
         string email, string firstName, string lastName,
         string role, Guid? schoolId)
     {
-        var existing = await userManager.FindByEmailAsync(email);
-        if (existing is not null) return;
+        var existingUser = await userManager.FindByEmailAsync(email);
+        if (existingUser is not null) return;
 
-        var user = new ApplicationUser
-        {
-            UserName = email,
-            Email = email,
-            FirstName = firstName,
-            LastName = lastName,
-            EmailConfirmed = true,
-            SchoolId = schoolId,
-            Type = schoolId.HasValue
-                ? UserType.Institutional
-                : UserType.Particular
-        };
+        var demoUser = ApplicationUserFactory.CreatePreconfirmed(email, firstName, lastName, schoolId);
 
-        var result = await userManager.CreateAsync(user, DefaultPassword);
-        if (result.Succeeded)
-            await userManager.AddToRoleAsync(user, role);
+        var createUserResult = await userManager.CreateAsync(demoUser, DefaultPassword);
+        if (createUserResult.Succeeded)
+            await userManager.AddToRoleAsync(demoUser, role);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -143,7 +132,7 @@ public static class DataSeeder
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 4. Preguntas reales del ICFES (desde preguntas_icfes.json)
+    // 4. Real ICFES questions (from preguntas_icfes.json)
     // ─────────────────────────────────────────────────────────────
     private static async Task SeedIcfesQuestionsAsync(
         ApplicationDbContext context,
@@ -161,7 +150,7 @@ public static class DataSeeder
         var questionSeeds = JsonSerializer.Deserialize<List<QuestionSeedDto>>(questionsJson, jsonOptions);
         if (questionSeeds is null) return;
 
-        // Una sola consulta para saber qué preguntas ya existen (antes era una consulta por pregunta).
+        // A single query to know which questions already exist (it used to be one query per question).
         var existingQuestionKeys = (await context.Questions
                 .Select(question => new { question.SubjectId, question.Text })
                 .ToListAsync())
@@ -188,7 +177,7 @@ public static class DataSeeder
                 questionBuilder.AddOption(optionSeed.Text, optionSeed.IsCorrect, optionSeed.ImageUrl);
             }
 
-            // Una pregunta mal escrita en el JSON se omite en vez de romper el arranque.
+            // A badly written question in the JSON is skipped instead of breaking startup.
             if (questionBuilder.Validate().Count > 0) continue;
 
             context.Questions.Add(questionBuilder.Build());
@@ -198,7 +187,7 @@ public static class DataSeeder
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Formato de cada pregunta en preguntas_icfes.json
+    // Shape of each question in preguntas_icfes.json
     // ─────────────────────────────────────────────────────────────
     private class QuestionSeedDto
     {

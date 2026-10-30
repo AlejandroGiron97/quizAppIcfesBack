@@ -6,7 +6,7 @@ namespace IcfesApp.Infrastructure.Identity;
 
 public static class RoleSeeder
 {
-    // Solo para bootstrap en desarrollo: cambiar esta contraseña (o borrar el usuario) antes de ir a producción.
+    // Development bootstrap only: change this password (or delete the user) before going to production.
     public const string DefaultAdminEmail = "admin@icfesapp.com";
     public const string DefaultAdminPassword = "Admin123!";
 
@@ -29,19 +29,12 @@ public static class RoleSeeder
             return;
         }
 
-        var admin = new ApplicationUser
-        {
-            UserName = DefaultAdminEmail,
-            Email = DefaultAdminEmail,
-            FirstName = "Admin",
-            LastName = "IcfesApp",
-            EmailConfirmed = true
-        };
+        var defaultAdmin = ApplicationUserFactory.CreatePreconfirmed(DefaultAdminEmail, "Admin", "IcfesApp");
 
-        var result = await userManager.CreateAsync(admin, DefaultAdminPassword);
-        if (result.Succeeded)
+        var createAdminResult = await userManager.CreateAsync(defaultAdmin, DefaultAdminPassword);
+        if (createAdminResult.Succeeded)
         {
-            await userManager.AddToRoleAsync(admin, Roles.Admin);
+            await userManager.AddToRoleAsync(defaultAdmin, Roles.Admin);
         }
     }
 }

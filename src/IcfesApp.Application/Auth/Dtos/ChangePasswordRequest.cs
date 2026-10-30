@@ -3,10 +3,10 @@
 namespace IcfesApp.Application.Auth.Dtos;
 
 /// <summary>
-/// Solicitud de cambio de contraseña para un usuario autenticado.
-/// Requiere la contraseña actual como medida de seguridad adicional:
-/// si un atacante obtiene un access token robado, no puede cambiar la
-/// contraseña sin conocer la contraseña vigente.
+/// Password change request for an authenticated user.
+/// Requires the current password as an extra security measure:
+/// if an attacker gets hold of a stolen access token, they cannot change the
+/// password without knowing the current one.
 /// </summary>
 public class ChangePasswordRequest
 {

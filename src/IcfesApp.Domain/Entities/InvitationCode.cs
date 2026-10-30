@@ -3,39 +3,39 @@
 namespace IcfesApp.Domain.Entities;
 
 /// <summary>
-/// Código de invitación que permite a un estudiante registrarse como institucional
-/// sin pasar por el flujo de pago. Un Admin de institución (o el Super Admin) lo genera.
+/// Invitation code that lets a student register as institutional
+/// without going through the payment flow. An institution Admin (or the Super Admin) generates it.
 /// 
-/// Al registrarse con un código válido, el nuevo usuario queda vinculado a la institución
-/// del código (su SchoolId se establece al InstitutionId del código).
+/// When registering with a valid code, the new user is linked to the code's institution
+/// (their SchoolId is set to the code's InstitutionId).
 /// </summary>
 public class InvitationCode : BaseEntity
 {
-    /// <summary>Código visible que el usuario introduce en el formulario de registro. Ej: "COLEGIO-SJ-2026".</summary>
+    /// <summary>Visible code the user types in the sign-up form. E.g. "COLEGIO-SJ-2026".</summary>
     public required string Code { get; set; }
 
-    /// <summary>Institución a la que se vincula quien use este código.</summary>
+    /// <summary>Institution that whoever uses this code gets linked to.</summary>
     public Guid InstitutionId { get; set; }
     public School Institution { get; set; } = null!;
 
-    /// <summary>Cuántas veces puede usarse. -1 = ilimitado. 0 = ya no se puede usar.</summary>
+    /// <summary>How many times it can be used. -1 = unlimited. 0 = can no longer be used.</summary>
     public int MaxUses { get; set; } = -1;
 
-    /// <summary>Cuántas veces se ha usado ya.</summary>
+    /// <summary>How many times it has been used so far.</summary>
     public int Uses { get; set; }
 
-    /// <summary>Fecha de expiración. Null = no expira.</summary>
+    /// <summary>Expiration date. Null = does not expire.</summary>
     public DateTime? ExpiresAtUtc { get; set; }
 
-    /// <summary>Permite revocar el código sin borrarlo.</summary>
+    /// <summary>Allows revoking the code without deleting it.</summary>
     public bool IsActive { get; set; } = true;
 
-    /// <summary>Qué admin generó el código (para auditoría).</summary>
+    /// <summary>Which admin generated the code (for auditing).</summary>
     public Guid? CreatedByUserId { get; set; }
 
     /// <summary>
-    /// Indica si el código puede usarse ahora mismo:
-    /// activo, con usos disponibles y sin haber expirado.
+    /// Whether the code can be used right now:
+    /// active, with uses left and not expired.
     /// </summary>
     public bool IsUsable =>
         IsActive &&

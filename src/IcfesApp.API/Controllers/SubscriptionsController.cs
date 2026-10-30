@@ -10,22 +10,22 @@ namespace IcfesApp.API.Controllers;
 public class SubscriptionsController(ISubscriptionService subscriptionService) : ApiControllerBase
 {
     /// <summary>
-    /// Devuelve la suscripción relevante para el usuario autenticado:
-    /// - Particular: la suya.
-    /// - Institutional: la de su institución.
+    /// Returns the subscription that applies to the authenticated user:
+    /// - Particular: their own.
+    /// - Institutional: their institution's.
     /// </summary>
     [HttpGet("current")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCurrent(CancellationToken cancellationToken)
         => Ok(await subscriptionService.GetMineAsync(CurrentUserId, cancellationToken));
 
-    /// <summary>Lista todas las suscripciones. Solo Super Admin.</summary>
+    /// <summary>Lists every subscription. Super Admin only.</summary>
     [HttpGet]
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
         => Ok(await subscriptionService.GetAllAsync(cancellationToken));
 
-    /// <summary>Devuelve la suscripción de una institución específica. Solo Super Admin.</summary>
+    /// <summary>Returns the subscription of a specific institution. Super Admin only.</summary>
     [HttpGet("institution/{institutionId:guid}")]
     [Authorize(Policy = Policies.RequireAdmin)]
     public async Task<IActionResult> GetForInstitution(Guid institutionId, CancellationToken cancellationToken)

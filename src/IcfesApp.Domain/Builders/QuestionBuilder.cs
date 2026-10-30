@@ -4,18 +4,18 @@ using IcfesApp.Domain.Enums;
 namespace IcfesApp.Domain.Builders;
 
 /// <summary>
-/// Construye preguntas válidas paso a paso (patrón Builder).
+/// Builds valid questions step by step (Builder pattern).
 ///
-/// Es el ÚNICO lugar donde se arma una <see cref="Question"/> con sus opciones, así las reglas
-/// del negocio viven en un solo sitio y las usan por igual el servicio (crear/editar) y el seeder:
-///   - Debe tener enunciado y justificación.
-///   - Debe tener al menos <see cref="MinimumOptionCount"/> opciones.
-///   - Debe tener exactamente una opción correcta.
+/// It is the ONLY place where a <see cref="Question"/> is assembled with its options, so the business
+/// rules live in a single spot and are shared by the service (create/update) and the seeder:
+///   - It must have a statement and a justification.
+///   - It must have at least <see cref="MinimumOptionCount"/> options.
+///   - It must have exactly one correct option.
 ///
-/// Uso:
+/// Usage:
 /// <code>
 /// var questionBuilder = QuestionBuilder.ForSubject(subjectId)
-///     .WithStatement("¿Cuánto es 2 + 2?", statementImageUrl: null)
+///     .WithStatement("What is 2 + 2?", statementImageUrl: null)
 ///     .WithJustification("2 + 2 = 4")
 ///     .WithDifficulty(QuestionDifficulty.Easy)
 ///     .CreatedBy(teacherUserId)
@@ -48,7 +48,7 @@ public sealed class QuestionBuilder
         _subjectId = subjectId;
     }
 
-    /// <summary>Punto de entrada: toda pregunta pertenece a una materia.</summary>
+    /// <summary>Entry point: every question belongs to a subject.</summary>
     public static QuestionBuilder ForSubject(Guid subjectId) => new(subjectId);
 
     public QuestionBuilder WithStatement(string statementText, string? statementImageUrl = null)
@@ -83,7 +83,7 @@ public sealed class QuestionBuilder
         return this;
     }
 
-    /// <summary>Revisa las reglas del negocio. Lista vacía = la pregunta se puede construir.</summary>
+    /// <summary>Checks the business rules. Empty list = the question can be built.</summary>
     public IReadOnlyList<string> Validate()
     {
         var validationErrors = new List<string>();
@@ -117,8 +117,8 @@ public sealed class QuestionBuilder
     }
 
     /// <summary>
-    /// Crea la pregunta. Lanza <see cref="InvalidOperationException"/> si no cumple las reglas:
-    /// llama antes a <see cref="Validate"/> para obtener los errores sin excepción.
+    /// Creates the question. Throws <see cref="InvalidOperationException"/> if the rules are not met:
+    /// call <see cref="Validate"/> first to get the errors without an exception.
     /// </summary>
     public Question Build()
     {
@@ -140,8 +140,8 @@ public sealed class QuestionBuilder
     }
 
     /// <summary>
-    /// Crea solo las opciones, ya validadas, para una pregunta existente.
-    /// Se usa al editar, donde la pregunta ya está en la base de datos.
+    /// Creates only the options, already validated, for an existing question.
+    /// Used when updating, where the question is already in the database.
     /// </summary>
     public List<QuestionOption> BuildOptionsFor(Guid questionId)
     {
@@ -164,7 +164,7 @@ public sealed class QuestionBuilder
         if (validationErrors.Count > 0)
         {
             throw new InvalidOperationException(
-                $"No se puede construir la pregunta: {string.Join(" ", validationErrors)}");
+                $"The question cannot be built: {string.Join(" ", validationErrors)}");
         }
     }
 

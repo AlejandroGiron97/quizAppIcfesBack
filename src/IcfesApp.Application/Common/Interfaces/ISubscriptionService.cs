@@ -5,9 +5,9 @@ namespace IcfesApp.Application.Common.Interfaces;
 public interface ISubscriptionService
 {
     /// <summary>
-    /// Devuelve la suscripción relevante para el usuario indicado:
-    /// - Si es Particular: la suya propia.
-    /// - Si es Institutional: la de su institución.
+    /// Returns the subscription that applies to the given user:
+    /// - Particular: their own.
+    /// - Institutional: their institution's.
     /// </summary>
     Task<SubscriptionDto?> GetMineAsync(Guid userId, CancellationToken cancellationToken = default);
 
@@ -16,8 +16,8 @@ public interface ISubscriptionService
     Task<IReadOnlyList<SubscriptionDto>> GetAllAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Devuelve true si el usuario tiene acceso activo (propio o por su institución).
-    /// Es la función que se usará para gatear endpoints que requieren suscripción.
+    /// Returns true if the user has active access (their own or through their institution).
+    /// This is the check used to gate endpoints that require a subscription.
     /// </summary>
     Task<bool> HasActiveAccessAsync(Guid userId, CancellationToken cancellationToken = default);
 }

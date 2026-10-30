@@ -7,9 +7,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace IcfesApp.API.Controllers;
 
 /// <summary>
-/// Banco de preguntas. Todo el controlador es solo para Teacher/Admin porque QuestionDto
-/// incluye cuál es la opción correcta. El estudiante recibe las preguntas a través de
-/// /api/practice-sessions, que nunca revela la respuesta antes de tiempo.
+/// Question bank. The whole controller is restricted to Teacher/Admin because QuestionDto
+/// includes which option is correct. Students get their questions through
+/// /api/practice-sessions, which never reveals the answer ahead of time.
 /// </summary>
 [Route("api/questions")]
 [Authorize(Policy = Policies.RequireTeacher)]

@@ -38,7 +38,7 @@ public class InvitationCodesController(IInvitationCodeService invitationCodeServ
         => ToActionResult(await invitationCodeService.UpdateAsync(id, request, cancellationToken));
 
     /// <summary>
-    /// Revoca el código sin borrarlo. Se puede reactivar actualizándolo con IsActive = true.
+    /// Revokes the code without deleting it. It can be reactivated by updating it with IsActive = true.
     /// </summary>
     [HttpPost("{id:guid}/revoke")]
     public async Task<IActionResult> Revoke(Guid id, CancellationToken cancellationToken)

@@ -5,16 +5,16 @@ namespace IcfesApp.Domain.Entities;
 
 public class Question : BaseEntity
 {
-    /// <summary>Enunciado de la pregunta.</summary>
+    /// <summary>Question statement.</summary>
     public required string Text { get; set; }
 
-    /// <summary>Imagen opcional del enunciado (mapas, gráficas, tablas...).</summary>
+    /// <summary>Optional image for the statement (maps, charts, tables...).</summary>
     public string? ImageUrl { get; set; }
 
-    /// <summary>Explicación de la respuesta correcta que ve el estudiante después de responder.</summary>
+    /// <summary>Explanation of the correct answer that the student sees after answering.</summary>
     public required string Justification { get; set; }
 
-    /// <summary>Imagen opcional de la justificación (fórmulas, procedimientos...).</summary>
+    /// <summary>Optional image for the justification (formulas, worked steps...).</summary>
     public string? JustificationImageUrl { get; set; }
 
     public QuestionDifficulty Difficulty { get; set; } = QuestionDifficulty.Medium;
@@ -24,11 +24,11 @@ public class Question : BaseEntity
 
     public Guid CreatedByUserId { get; set; }
 
-    /// <summary>Opciones de respuesta. Siempre hay exactamente una correcta (lo garantiza QuestionBuilder).</summary>
+    /// <summary>Answer options. There is always exactly one correct option (guaranteed by QuestionBuilder).</summary>
     public ICollection<QuestionOption> Options { get; set; } = [];
 
     public ICollection<StudentAnswer> StudentAnswers { get; set; } = [];
 
-    /// <summary>La opción correcta. Requiere que <see cref="Options"/> esté cargada. No se guarda en BD.</summary>
+    /// <summary>The correct option. Requires <see cref="Options"/> to be loaded. Not stored in the database.</summary>
     public QuestionOption CorrectOption => Options.Single(option => option.IsCorrect);
 }

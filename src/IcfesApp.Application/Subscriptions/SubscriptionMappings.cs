@@ -5,7 +5,7 @@ namespace IcfesApp.Application.Subscriptions;
 
 public static class SubscriptionMappings
 {
-    /// <remarks>Requiere que <see cref="Subscription.Plan"/> esté cargado (e Institution si es institucional).</remarks>
+    /// <remarks>Requires <see cref="Subscription.Plan"/> to be loaded (and Institution when it is institutional).</remarks>
     public static SubscriptionDto ToDto(this Subscription subscription)
     {
         var daysRemaining = (int)Math.Ceiling((subscription.ExpiresAtUtc - DateTime.UtcNow).TotalDays);

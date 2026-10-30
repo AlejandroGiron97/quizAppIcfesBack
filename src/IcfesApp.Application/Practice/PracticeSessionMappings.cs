@@ -4,14 +4,14 @@ using IcfesApp.Domain.Entities;
 namespace IcfesApp.Application.Practice;
 
 /// <summary>
-/// Convierte sesiones de práctica a DTOs.
-/// Mientras el estudiante responde (<see cref="ToDto"/>) nunca se expone cuál es la opción
-/// correcta; solo se revela después de responder (<see cref="ToAnswerResultDto"/>) o al
-/// finalizar (<see cref="ToResultDto"/>).
+/// Converts practice sessions to DTOs.
+/// While the student is answering (<see cref="ToDto"/>) the correct option is never
+/// exposed; it is only revealed after answering (<see cref="ToAnswerResultDto"/>) or when
+/// finishing the session (<see cref="ToResultDto"/>).
 /// </summary>
 public static class PracticeSessionMappings
 {
-    /// <remarks>Requiere Subject y Answers → Question → Options cargados.</remarks>
+    /// <remarks>Requires Subject and Answers → Question → Options to be loaded.</remarks>
     public static PracticeSessionDto ToDto(this PracticeSession session) => new()
     {
         Id = session.Id,

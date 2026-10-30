@@ -7,6 +7,6 @@ public class StartPracticeSessionRequest
     [Required]
     public Guid SubjectId { get; set; }
 
-    /// <summary>Si no se indica, la sesión incluye todas las preguntas de la materia.</summary>
+    /// <summary>If not provided, the session includes every question of the subject.</summary>
     public int? QuestionCount { get; set; }
 }

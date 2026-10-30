@@ -2,6 +2,7 @@ using System.Text;
 using IcfesApp.Application.Common.Interfaces;
 using IcfesApp.Domain.Constants;
 using IcfesApp.Infrastructure.Content;
+using IcfesApp.Infrastructure.Content.SubscriptionOwnership;
 using IcfesApp.Infrastructure.Email;
 using IcfesApp.Infrastructure.Identity;
 using IcfesApp.Infrastructure.Persistence;
@@ -26,7 +27,7 @@ public static class DependencyInjection
             : "DefaultConnection";
 
         var connectionString = configuration.GetConnectionString(connectionStringKey)
-            ?? throw new InvalidOperationException($"No se encontró la cadena de conexión '{connectionStringKey}'.");
+            ?? throw new InvalidOperationException($"Connection string '{connectionStringKey}' was not found.");
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {
@@ -59,7 +60,7 @@ public static class DependencyInjection
             .AddDefaultTokenProviders();
 
         var jwtSettings = configuration.GetSection("Jwt").Get<JwtSettings>()
-            ?? throw new InvalidOperationException("No se encontró la sección de configuración 'Jwt'.");
+            ?? throw new InvalidOperationException("Configuration section 'Jwt' was not found.");
 
         services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
         services.Configure<EmailSettings>(configuration.GetSection("Email"));
@@ -92,18 +93,41 @@ public static class DependencyInjection
             options.AddPolicy(Policies.RequireStudent, policy => policy.RequireRole(Roles.Admin, Roles.Teacher, Roles.Student));
         });
 
+        AddAuthenticationServices(services);
+        AddContentServices(services);
+
+        return services;
+    }
+
+    /// <summary>Registration, session, password, email confirmation and 2FA.</summary>
+    private static void AddAuthenticationServices(IServiceCollection services)
+    {
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<IAuthTokenIssuer, AuthTokenIssuer>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();
-        services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IAuthEmailSender, AuthEmailSender>();
+
+        services.AddScoped<IRegistrationService, RegistrationService>();
+        services.AddScoped<ISessionService, SessionService>();
+        services.AddScoped<IPasswordService, PasswordService>();
+        services.AddScoped<IEmailConfirmationService, EmailConfirmationService>();
+        services.AddScoped<ITwoFactorService, TwoFactorService>();
+    }
+
+    /// <summary>Subjects, questions, institutions, invitation codes, plans, subscriptions, reports and practice.</summary>
+    private static void AddContentServices(IServiceCollection services)
+    {
         services.AddScoped<ISubjectService, SubjectService>();
         services.AddScoped<IQuestionService, QuestionService>();
         services.AddScoped<ISchoolService, SchoolService>();
         services.AddScoped<IInvitationCodeService, InvitationCodeService>();
         services.AddScoped<IPlanService, PlanService>();
-        services.AddScoped<ISubscriptionService, SubscriptionService>();
         services.AddScoped<IReportService, ReportService>();
         services.AddScoped<IPracticeSessionService, PracticeSessionService>();
 
-        return services;
+        // "Whose subscription is it" strategies: SubscriptionService receives all of them and picks the one that applies.
+        services.AddSingleton<ISubscriptionOwnerStrategy, ParticularSubscriptionOwnerStrategy>();
+        services.AddSingleton<ISubscriptionOwnerStrategy, InstitutionalSubscriptionOwnerStrategy>();
+        services.AddScoped<ISubscriptionService, SubscriptionService>();
     }
 }

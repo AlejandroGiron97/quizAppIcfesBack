@@ -10,7 +10,7 @@ namespace IcfesApp.Infrastructure.Content;
 
 public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitationCodeService
 {
-    /// <summary>Alfabeto sin caracteres que se confunden al leerlos (sin I, O, 0, 1).</summary>
+    /// <summary>Alphabet without characters that are easy to confuse when read (no I, O, 0, 1).</summary>
     private const string CodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private const int RandomSuffixLength = 6;
     private const int MaxPrefixLength = 6;
@@ -154,8 +154,8 @@ public class InvitationCodeService(IApplicationDbContext dbContext) : IInvitatio
     }
 
     /// <summary>
-    /// Genera un código legible: prefijo con las primeras letras de la institución
-    /// y un sufijo aleatorio criptográficamente seguro. Ej: "COLEGI-7KQ2MX".
+    /// Generates a readable code: a prefix with the first letters of the institution
+    /// and a cryptographically secure random suffix. E.g. "COLEGI-7KQ2MX".
     /// </summary>
     private static string GenerateCodeValue(string institutionName)
     {

@@ -30,7 +30,7 @@ public class JwtTokenService(IOptions<JwtSettings> options) : IJwtTokenService
         };
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
 
-        // Tipo de usuario como claim para que /session lo pueda devolver sin consultar la BD.
+        // User type as a claim so /session can return it without querying the database.
         if (type.HasValue)
         {
             claims.Add(new Claim("user_type", type.Value.ToString()));
@@ -99,18 +99,20 @@ public class JwtTokenService(IOptions<JwtSettings> options) : IJwtTokenService
                 ClockSkew = TimeSpan.Zero
             }, out _);
 
-            var purpose = principal.Claims.FirstOrDefault(c => c.Type == TwoFactorPurposeClaim)?.Value;
-            if (purpose != TwoFactorPurposeValue)
+            var tokenPurpose = principal.Claims.FirstOrDefault(claim => claim.Type == TwoFactorPurposeClaim)?.Value;
+            if (tokenPurpose != TwoFactorPurposeValue)
             {
                 return null;
             }
 
-            var sub = principal.Claims
-                .FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub || c.Type == ClaimTypes.NameIdentifier)?.Value;
+            var userIdClaimValue = principal.Claims
+                .FirstOrDefault(claim => claim.Type == JwtRegisteredClaimNames.Sub || claim.Type == ClaimTypes.NameIdentifier)?.Value;
 
-            return sub is not null && Guid.TryParse(sub, out var userId) ? userId : null;
+            return userIdClaimValue is not null && Guid.TryParse(userIdClaimValue, out var userId) ? userId : null;
         }
-        catch (SecurityTokenException)
+        // A malformed token (e.g. "abc") throws SecurityTokenMalformedException, which derives from
+        // ArgumentException and not from SecurityTokenException; it used to escape as a 500 error.
+        catch (Exception exception) when (exception is SecurityTokenException or ArgumentException)
         {
             return null;
         }

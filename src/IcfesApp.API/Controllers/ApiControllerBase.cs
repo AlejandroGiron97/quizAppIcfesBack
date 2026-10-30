@@ -5,30 +5,30 @@ using Microsoft.AspNetCore.Mvc;
 namespace IcfesApp.API.Controllers;
 
 /// <summary>
-/// Clase base de todos los controladores de la API.
+/// Base class for every API controller.
 ///
-/// Concentra lo que antes estaba copiado en cada controlador:
-///   - <see cref="CurrentUserId"/>: Id del usuario autenticado, leído del JWT.
-///   - <see cref="ToActionResult(Result)"/>: traduce un <see cref="Result"/> del servicio a una respuesta HTTP.
+/// Holds what used to be copied into each controller:
+///   - <see cref="CurrentUserId"/>: id of the authenticated user, read from the JWT.
+///   - <see cref="ToActionResult(Result)"/>: turns a service <see cref="Result"/> into an HTTP response.
 ///
-/// Regla: los servicios nunca devuelven códigos HTTP; devuelven un Result con su <see cref="ErrorType"/>
-/// y aquí se decide el código (400, 401, 403, 404, 423).
+/// Rule: services never return HTTP status codes; they return a Result with its <see cref="ErrorType"/>
+/// and the status code (400, 401, 403, 404, 423) is chosen here.
 /// </summary>
 [ApiController]
 public abstract class ApiControllerBase : ControllerBase
 {
-    /// <summary>Id del usuario autenticado. Solo usar en acciones con [Authorize].</summary>
+    /// <summary>Id of the authenticated user. Only use it in actions marked with [Authorize].</summary>
     protected Guid CurrentUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-    /// <summary>Éxito → 204 No Content. Fallo → código según el tipo de error.</summary>
+    /// <summary>Success → 204 No Content. Failure → status code based on the error type.</summary>
     protected IActionResult ToActionResult(Result result) =>
         result.Succeeded ? NoContent() : ToErrorResponse(result);
 
-    /// <summary>Éxito → 200 OK con el valor. Fallo → código según el tipo de error.</summary>
+    /// <summary>Success → 200 OK with the value. Failure → status code based on the error type.</summary>
     protected IActionResult ToActionResult<T>(Result<T> result) =>
         result.Succeeded ? Ok(result.Value) : ToErrorResponse(result);
 
-    /// <summary>Respuesta de error con el formato común de la API: { "errors": [...] }.</summary>
+    /// <summary>Error response using the common API format: { "errors": [...] }.</summary>
     protected IActionResult ToErrorResponse(Result failedResult)
     {
         var errorBody = new { errors = failedResult.Errors };

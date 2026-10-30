@@ -9,9 +9,9 @@ public class EmailSettings
     public required string FromEmail { get; set; }
     public string FromName { get; set; } = "IcfesApp";
 
-    /// <summary>URL de la pantalla del front donde el usuario define su nueva contraseña.</summary>
+    /// <summary>URL of the frontend screen where the user sets their new password.</summary>
     public string ResetPasswordUrlTemplate { get; set; } = "http://localhost:4200/reset-password";
 
-    /// <summary>URL de la pantalla del front que confirma el email (lee ?email=&token= y llama a /api/auth/confirm-email).</summary>
+    /// <summary>URL of the frontend screen that confirms the email (reads ?email=&token= and calls /api/auth/confirm-email).</summary>
     public string ConfirmEmailUrlTemplate { get; set; } = "http://localhost:4200/confirm-email";
 }

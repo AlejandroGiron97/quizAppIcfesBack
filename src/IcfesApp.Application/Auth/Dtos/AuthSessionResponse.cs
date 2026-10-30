@@ -1,10 +1,10 @@
 ﻿namespace IcfesApp.Application.Auth.Dtos;
 
 /// <summary>
-/// Respuesta de /api/auth/refresh: solo tokens de sesión.
-/// No incluye datos del usuario a propósito — el cliente ya los tiene del login
-/// y puede refrescarlos con /api/auth/session si los necesita.
-/// Esto reduce el payload de un endpoint que se llama silenciosamente cada ~15 min.
+/// Response of /api/auth/refresh: session tokens only.
+/// It intentionally does not include user data — the client already has it from login
+/// and can refresh it with /api/auth/session if needed.
+/// This keeps the payload small for an endpoint that is called silently every ~15 min.
 /// </summary>
 public class AuthSessionResponse
 {

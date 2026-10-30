@@ -30,11 +30,11 @@ public class SmtpEmailSender(
             await client.SendAsync(message, cancellationToken);
             await client.DisconnectAsync(true, cancellationToken);
 
-            logger.LogInformation("✅ Correo enviado a {To} vía {Host}", toEmail, _settings.SmtpHost);
+            logger.LogInformation("✅ Email sent to {To} via {Host}", toEmail, _settings.SmtpHost);
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            logger.LogError(ex, "❌ Fallo al enviar correo a {To} vía {Host}", toEmail, _settings.SmtpHost);
+            logger.LogError(exception, "❌ Failed to send email to {To} via {Host}", toEmail, _settings.SmtpHost);
             throw;
         }
     }

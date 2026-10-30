@@ -115,8 +115,8 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
     }
 
     /// <summary>
-    /// Elige preguntas al azar de una materia. Primero trae solo los Ids (consulta liviana),
-    /// los mezcla en memoria y después carga con sus opciones únicamente las elegidas.
+    /// Picks random questions from a subject. It first loads only the ids (lightweight query),
+    /// shuffles them in memory and then loads with their options only the selected ones.
     /// </summary>
     private async Task<List<Question>> PickRandomQuestionsAsync(Guid subjectId, int? requestedQuestionCount, CancellationToken cancellationToken)
     {
@@ -135,13 +135,13 @@ public class PracticeSessionService(IApplicationDbContext dbContext) : IPractice
             .Where(question => selectedQuestionIds.Contains(question.Id))
             .ToListAsync(cancellationToken);
 
-        // La consulta SQL no respeta el orden aleatorio: se reordena según la selección.
+        // The SQL query does not keep the random order: reorder according to the selection.
         return selectedQuestions
             .OrderBy(question => selectedQuestionIds.IndexOf(question.Id))
             .ToList();
     }
 
-    /// <summary>Busca una sesión solo si pertenece al estudiante; si es de otro devuelve null.</summary>
+    /// <summary>Finds a session only if it belongs to the student; returns null if it belongs to someone else.</summary>
     private Task<PracticeSession?> FindStudentSessionAsync(Guid sessionId, Guid studentUserId, CancellationToken cancellationToken) =>
         SessionsWithQuestions()
             .FirstOrDefaultAsync(

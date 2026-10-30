@@ -3,17 +3,17 @@
 public class UpdateInvitationCodeRequest
 {
     /// <summary>
-    /// Número máximo de usos. -1 = ilimitado. No puede ser menor a los usos ya realizados.
+    /// Maximum number of uses. -1 = unlimited. Cannot be lower than the uses already made.
     /// </summary>
     public int MaxUses { get; set; }
 
     /// <summary>
-    /// Fecha de expiración. Null = nunca expira.
+    /// Expiration date. Null = never expires.
     /// </summary>
     public DateTime? ExpiresAtUtc { get; set; }
 
     /// <summary>
-    /// Permite reactivar un código revocado (true) o desactivarlo (false).
+    /// Allows reactivating a revoked code (true) or deactivating it (false).
     /// </summary>
     public bool IsActive { get; set; }
 }

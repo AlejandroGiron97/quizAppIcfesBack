@@ -4,17 +4,17 @@ using IcfesApp.Domain.Enums;
 namespace IcfesApp.Domain.Entities;
 
 /// <summary>
-/// Suscripción activa de un usuario particular o de una institución.
+/// Active subscription of a particular user or of an institution.
 /// 
-/// REGLA: exactamente una de las dos FKs (UserId o InstitutionId) está poblada.
-/// Nunca las dos, nunca ninguna. Se valida con check constraint en la BD.
+/// RULE: exactly one of the two FKs (UserId or InstitutionId) is set.
+/// Never both, never neither. Enforced with a check constraint in the database.
 /// </summary>
 public class Subscription : BaseEntity
 {
-    /// <summary>Usuario particular dueño. Null si es institucional.</summary>
+    /// <summary>Owning particular user. Null if institutional.</summary>
     public Guid? UserId { get; set; }
 
-    /// <summary>Institución dueña. Null si es particular.</summary>
+    /// <summary>Owning institution. Null if particular.</summary>
     public Guid? InstitutionId { get; set; }
     public School? Institution { get; set; }
 

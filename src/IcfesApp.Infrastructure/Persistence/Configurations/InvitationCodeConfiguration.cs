@@ -14,23 +14,23 @@ public class InvitationCodeConfiguration : IEntityTypeConfiguration<InvitationCo
             .IsRequired()
             .HasMaxLength(50);
 
-        // Índice único: no puede haber dos códigos iguales
+        // Unique index: there cannot be two equal codes
         builder.HasIndex(ic => ic.Code).IsUnique();
 
         builder.Property(ic => ic.MaxUses).HasDefaultValue(-1);
         builder.Property(ic => ic.Uses).HasDefaultValue(0);
         builder.Property(ic => ic.IsActive).HasDefaultValue(true);
 
-        // Ignorar la propiedad calculada IsUsable (no se persiste)
+        // Ignore the computed IsUsable property (not persisted)
         builder.Ignore(ic => ic.IsUsable);
 
-        // Relación con Institution (School). Al borrar la institución, se borran sus códigos.
+        // Relationship with Institution (School). Deleting the institution deletes its codes.
         builder.HasOne(ic => ic.Institution)
             .WithMany()
             .HasForeignKey(ic => ic.InstitutionId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Índice para búsquedas rápidas por institución
+        // Index for fast lookups by institution
         builder.HasIndex(ic => ic.InstitutionId);
     }
 }

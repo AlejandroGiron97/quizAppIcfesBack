@@ -1,22 +1,22 @@
 ﻿namespace IcfesApp.Domain.Enums;
 
 /// <summary>
-/// Estados posibles de una suscripción.
+/// Possible states of a subscription.
 /// </summary>
 public enum SubscriptionStatus
 {
-    /// <summary>Creada pero aún no activada (ej: esperando confirmación de pago).</summary>
+    /// <summary>Created but not activated yet (e.g. waiting for payment confirmation).</summary>
     Pending = 0,
 
-    /// <summary>Activa y vigente. Es la única que da acceso al producto.</summary>
+    /// <summary>Active and valid. It is the only state that grants access to the product.</summary>
     Active = 1,
 
-    /// <summary>Vencio por tiempo. Requiere renovación.</summary>
+    /// <summary>Expired over time. Requires renewal.</summary>
     Expired = 2,
 
-    /// <summary>Cancelada por el usuario o por el administrador antes de expirar.</summary>
+    /// <summary>Cancelled by the user or by an administrator before expiring.</summary>
     Cancelled = 3,
 
-    /// <summary>Intento de cobro fallido (aplica a renovaciones automáticas).</summary>
+    /// <summary>Failed charge attempt (applies to automatic renewals).</summary>
     PastDue = 4
 }

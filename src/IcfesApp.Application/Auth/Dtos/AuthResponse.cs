@@ -1,9 +1,9 @@
 ﻿namespace IcfesApp.Application.Auth.Dtos;
 
 /// <summary>
-/// Respuesta de los endpoints que emiten sesión completa (login, 2fa/verify,
-/// register-staff, google). Todos los campos son requeridos: el cliente puede
-/// confiar en que están presentes.
+/// Response of the endpoints that issue a full session (login, 2fa/verify,
+/// google). Every field is required: the client can
+/// rely on them being present.
 /// </summary>
 public class AuthResponse
 {

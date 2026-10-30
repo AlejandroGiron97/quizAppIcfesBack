@@ -10,7 +10,7 @@ public class SubscriptionConfiguration : IEntityTypeConfiguration<Subscription>
     {
         builder.ToTable("Subscriptions", t =>
         {
-            // EXACTAMENTE una de las dos FKs debe estar poblada.
+            // EXACTLY one of the two FKs must be set.
             // (UserId NOT NULL AND InstitutionId NULL) OR (UserId NULL AND InstitutionId NOT NULL)
             t.HasCheckConstraint(
                 "CK_Subscription_Owner",

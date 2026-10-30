@@ -7,8 +7,8 @@ using Microsoft.EntityFrameworkCore;
 namespace IcfesApp.Infrastructure.Content;
 
 /// <summary>
-/// Usa ApplicationDbContext (y no IApplicationDbContext) porque necesita leer usuarios y roles,
-/// que pertenecen a Identity y viven en Infrastructure.
+/// Uses ApplicationDbContext (not IApplicationDbContext) because it needs to read users and roles,
+/// which belong to Identity and live in Infrastructure.
 /// </summary>
 public class ReportService(ApplicationDbContext dbContext) : IReportService
 {

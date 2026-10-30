@@ -3,8 +3,8 @@ using IcfesApp.Domain.Common;
 namespace IcfesApp.Domain.Entities;
 
 /// <summary>
-/// Una pregunta dentro de una sesión de práctica y la respuesta del estudiante.
-/// Se crea sin respuesta al iniciar la sesión y se completa con <see cref="RegisterSelectedOption"/>.
+/// A question inside a practice session and the student's answer to it.
+/// It is created unanswered when the session starts and completed with <see cref="RegisterSelectedOption"/>.
 /// </summary>
 public class StudentAnswer : BaseEntity
 {
@@ -14,7 +14,7 @@ public class StudentAnswer : BaseEntity
     public Guid QuestionId { get; set; }
     public Question Question { get; set; } = null!;
 
-    /// <summary>Opción elegida. Null mientras la pregunta no se ha respondido.</summary>
+    /// <summary>Selected option. Null while the question has not been answered.</summary>
     public Guid? SelectedOptionId { get; set; }
     public QuestionOption? SelectedOption { get; set; }
 
@@ -22,10 +22,10 @@ public class StudentAnswer : BaseEntity
 
     public DateTime AnsweredAtUtc { get; set; } = DateTime.UtcNow;
 
-    /// <summary>No se guarda en BD.</summary>
+    /// <summary>Not stored in the database.</summary>
     public bool IsAnswered => SelectedOptionId is not null;
 
-    /// <summary>Guarda la opción elegida por el estudiante y si fue correcta.</summary>
+    /// <summary>Stores the option chosen by the student and whether it was correct.</summary>
     public void RegisterSelectedOption(QuestionOption selectedOption)
     {
         var answeredAtUtc = DateTime.UtcNow;

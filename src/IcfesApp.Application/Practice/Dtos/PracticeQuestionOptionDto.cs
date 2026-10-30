@@ -1,6 +1,6 @@
 namespace IcfesApp.Application.Practice.Dtos;
 
-/// <summary>Opción de una pregunta vista por el estudiante mientras responde: nunca expone cuál es la correcta.</summary>
+/// <summary>Question option as seen by the student while answering: it never reveals which one is correct.</summary>
 public class PracticeQuestionOptionDto
 {
     public Guid Id { get; set; }

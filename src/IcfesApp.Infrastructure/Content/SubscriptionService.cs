@@ -1,39 +1,44 @@
 ﻿using IcfesApp.Application.Common.Interfaces;
 using IcfesApp.Application.Subscriptions;
 using IcfesApp.Application.Subscriptions.Dtos;
+using IcfesApp.Domain.Entities;
 using IcfesApp.Domain.Enums;
+using IcfesApp.Infrastructure.Content.SubscriptionOwnership;
 using IcfesApp.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace IcfesApp.Infrastructure.Content;
 
 /// <summary>
-/// Usa ApplicationDbContext (y no IApplicationDbContext) porque necesita leer la tabla de usuarios,
-/// que pertenece a Identity y vive en Infrastructure.
+/// Uses ApplicationDbContext (not IApplicationDbContext) because it needs to read the users table,
+/// which belongs to Identity and lives in Infrastructure.
+///
+/// "Whose subscription applies to this user" is decided by a strategy
+/// (<see cref="ISubscriptionOwnerStrategy"/>); this service has no ifs per user type.
 /// </summary>
-public class SubscriptionService(ApplicationDbContext dbContext) : ISubscriptionService
+public class SubscriptionService(
+    ApplicationDbContext dbContext,
+    IEnumerable<ISubscriptionOwnerStrategy> ownerStrategies) : ISubscriptionService
 {
     public async Task<SubscriptionDto?> GetMineAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var userAccess = await FindUserAccessAsync(userId, cancellationToken);
-        if (userAccess is null)
+        var owner = await FindOwnerContextAsync(userId, cancellationToken);
+        if (owner is null)
         {
             return null;
         }
 
-        if (userAccess.Type == UserType.Institutional && userAccess.SchoolId.HasValue)
-        {
-            return await GetForInstitutionAsync(userAccess.SchoolId.Value, cancellationToken);
-        }
-
-        var latestUserSubscription = await dbContext.Subscriptions
+        var subscriptionsWithDetails = dbContext.Subscriptions
             .AsNoTracking()
             .Include(subscription => subscription.Plan)
-            .Where(subscription => subscription.UserId == userId)
+            .Include(subscription => subscription.Institution);
+
+        var latestOwnedSubscription = await SelectStrategyFor(owner)
+            .FilterOwnedSubscriptions(subscriptionsWithDetails, owner)
             .OrderByDescending(subscription => subscription.StartedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
 
-        return latestUserSubscription?.ToDto();
+        return latestOwnedSubscription?.ToDto();
     }
 
     public async Task<SubscriptionDto?> GetForInstitutionAsync(Guid institutionId, CancellationToken cancellationToken = default)
@@ -63,34 +68,28 @@ public class SubscriptionService(ApplicationDbContext dbContext) : ISubscription
 
     public async Task<bool> HasActiveAccessAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var userAccess = await FindUserAccessAsync(userId, cancellationToken);
-        if (userAccess is null)
+        var owner = await FindOwnerContextAsync(userId, cancellationToken);
+        if (owner is null)
         {
             return false;
         }
 
         var nowUtc = DateTime.UtcNow;
-        var activeSubscriptions = dbContext.Subscriptions
+        IQueryable<Subscription> activeSubscriptions = dbContext.Subscriptions
             .Where(subscription => subscription.Status == SubscriptionStatus.Active && subscription.ExpiresAtUtc > nowUtc);
 
-        return userAccess.Type switch
-        {
-            UserType.Particular => await activeSubscriptions
-                .AnyAsync(subscription => subscription.UserId == userId, cancellationToken),
-
-            UserType.Institutional when userAccess.SchoolId.HasValue => await activeSubscriptions
-                .AnyAsync(subscription => subscription.InstitutionId == userAccess.SchoolId.Value, cancellationToken),
-
-            _ => false
-        };
+        return await SelectStrategyFor(owner)
+            .FilterOwnedSubscriptions(activeSubscriptions, owner)
+            .AnyAsync(cancellationToken);
     }
 
-    /// <summary>Lee solo lo necesario para decidir de quién es la suscripción: el tipo de usuario y su institución.</summary>
-    private Task<UserAccessInfo?> FindUserAccessAsync(Guid userId, CancellationToken cancellationToken) =>
+    private ISubscriptionOwnerStrategy SelectStrategyFor(SubscriptionOwnerContext owner) =>
+        ownerStrategies.Single(ownerStrategy => ownerStrategy.AppliesTo(owner));
+
+    /// <summary>Reads only what is needed from the user: their type and their institution.</summary>
+    private Task<SubscriptionOwnerContext?> FindOwnerContextAsync(Guid userId, CancellationToken cancellationToken) =>
         dbContext.Users
             .Where(user => user.Id == userId)
-            .Select(user => new UserAccessInfo(user.Type, user.SchoolId))
+            .Select(user => new SubscriptionOwnerContext(user.Id, user.Type, user.SchoolId))
             .FirstOrDefaultAsync(cancellationToken);
-
-    private sealed record UserAccessInfo(UserType Type, Guid? SchoolId);
 }

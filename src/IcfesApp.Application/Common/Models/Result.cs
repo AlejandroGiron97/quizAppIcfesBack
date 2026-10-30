@@ -1,16 +1,16 @@
 namespace IcfesApp.Application.Common.Models;
 
 /// <summary>
-/// Resultado de una operación de negocio sin valor de retorno.
-/// Es la clase base de <see cref="Result{T}"/> y de AuthResult.
-/// Los servicios devuelven Result en vez de lanzar excepciones para los fallos esperados
-/// (validaciones, recurso inexistente, credenciales inválidas...).
+/// Result of a business operation with no return value.
+/// It is the base class of <see cref="Result{T}"/> and of AuthResult.
+/// Services return a Result instead of throwing exceptions for expected failures
+/// (validation errors, missing resources, invalid credentials...).
 /// </summary>
 public class Result
 {
     public bool Succeeded { get; protected init; }
 
-    /// <summary>Categoría del fallo. <see cref="ErrorType.None"/> cuando la operación tuvo éxito.</summary>
+    /// <summary>Category of the failure. <see cref="ErrorType.None"/> when the operation succeeded.</summary>
     public ErrorType ErrorType { get; protected init; }
 
     public IReadOnlyList<string> Errors { get; protected init; } = [];
@@ -32,7 +32,7 @@ public class Result
     };
 }
 
-/// <summary>Resultado de una operación de negocio que devuelve un valor cuando tiene éxito.</summary>
+/// <summary>Result of a business operation that returns a value when it succeeds.</summary>
 public class Result<T> : Result
 {
     public T? Value { get; private init; }

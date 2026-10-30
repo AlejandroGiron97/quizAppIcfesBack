@@ -6,14 +6,14 @@ public class School : BaseEntity
 {
     public required string Name { get; set; }
 
-    /// <summary>Dominio institucional (ej: "colegiosanjose.edu.co").</summary>
+    /// <summary>Institutional domain (e.g. "colegiosanjose.edu.co").</summary>
     public string? Domain { get; set; }
 
     public string? City { get; set; }
 
-    /// <summary>Permite desactivar sin borrar.</summary>
+    /// <summary>Allows deactivating without deleting.</summary>
     public bool IsActive { get; set; } = true;
 
-    /// <summary>Qué SuperAdmin la creó. Auditoría.</summary>
+    /// <summary>Which SuperAdmin created it. Auditing.</summary>
     public Guid? CreatedByUserId { get; set; }
 }

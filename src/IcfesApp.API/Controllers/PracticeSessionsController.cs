@@ -21,7 +21,7 @@ public class PracticeSessionsController(IPracticeSessionService practiceSessionS
         return CreatedAtAction(nameof(GetById), new { id = startResult.Value!.Id }, startResult.Value);
     }
 
-    /// <summary>Sesiones del estudiante autenticado, de la más reciente a la más antigua.</summary>
+    /// <summary>Sessions of the authenticated student, newest first.</summary>
     [HttpGet]
     public async Task<IActionResult> GetMine(CancellationToken cancellationToken)
         => Ok(await practiceSessionService.GetMineAsync(CurrentUserId, cancellationToken));

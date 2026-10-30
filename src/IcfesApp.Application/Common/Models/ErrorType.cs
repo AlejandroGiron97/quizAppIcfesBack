@@ -1,8 +1,8 @@
 namespace IcfesApp.Application.Common.Models;
 
 /// <summary>
-/// Categoría de un fallo. El controlador la traduce a un código HTTP
-/// (ver ApiControllerBase), así los servicios no saben nada de HTTP.
+/// Category of a failure. The controller maps it to an HTTP status code
+/// (see ApiControllerBase), so services know nothing about HTTP.
 /// </summary>
 public enum ErrorType
 {

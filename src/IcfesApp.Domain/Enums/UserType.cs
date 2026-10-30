@@ -1,12 +1,12 @@
 ﻿namespace IcfesApp.Domain.Enums;
 
 /// <summary>
-/// Distingue el modelo de acceso del usuario.
-/// - Particular: accede individualmente, paga suscripción (FREE/STANDARD/SEMESTRAL).
-/// - Institutional: accede mediante código de institución, no paga (lo cubre el colegio).
+/// Distinguishes the user's access model.
+/// - Particular: accesses individually, pays a subscription (FREE/STANDARD/SEMESTRAL).
+/// - Institutional: accesses through an institution code, does not pay (the school covers it).
 /// 
-/// IMPORTANTE: Particular = 0 (no 1) para coincidir con el default de C#.
-/// Los usuarios ya existentes en BD tienen Type = 0, que ahora es "Particular".
+/// IMPORTANT: Particular = 0 (not 1) to match the C# default value.
+/// Users already stored in the database have Type = 0, which now means "Particular".
 /// </summary>
 public enum UserType
 {

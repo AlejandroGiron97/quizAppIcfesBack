@@ -1,267 +1,319 @@
-# Refactorización del backend — IcfesApp
+# Backend refactoring — IcfesApp
 
 | | |
 |---|---|
-| **Rama** | `refactor` (sale de `App_test`, commit `663dfaf`) |
-| **Última actualización** | 30-10-2026 |
-| **Estado** | Fases 1 y 2 terminadas · Fases 3 a 6 pendientes |
+| **Branch** | `refactor` (created from `App_test`, commit `663dfaf`) |
+| **Last update** | 2026-10-30 |
+| **Status** | Phases 1, 2 and 3 done · Phases 4 to 6 pending |
 
-Este documento registra **cada cambio** de la refactorización: qué se cambió, por qué y cómo se usa.
-Está pensado para que un desarrollador que llega al proyecto entienda la estructura sin tener que leer todo el código.
+This document records **every change** made during the refactoring: what changed, why, and how to use it.
+It is meant for a developer joining the project, so they can understand the structure without reading all the code.
 
----
-
-## 1. Mapa rápido del proyecto
-
-La solución sigue una arquitectura por capas. Cada capa solo conoce a las de abajo:
-
-```
-IcfesApp.API             → Controladores HTTP. Heredan de ApiControllerBase.
-   │
-IcfesApp.Infrastructure  → Implementación de los servicios (EF Core, Identity, JWT, correo).
-   │
-IcfesApp.Application     → Interfaces de servicios (IXxxService), DTOs, Result y mappers (ToDto).
-   │
-IcfesApp.Domain          → Entidades, enums, constantes y QuestionBuilder. No depende de nada.
-```
-
-**Regla para agregar una funcionalidad nueva:**
-
-1. Entidad en `Domain/Entities` (si hace falta).
-2. DTOs en `Application/<Modulo>/Dtos` y su mapper en `Application/<Modulo>/<Modulo>Mappings.cs`.
-3. Interfaz `IXxxService` en `Application/Common/Interfaces`, que devuelve `Result` / `Result<T>`.
-4. Implementación `XxxService` en `Infrastructure/Content` y su registro en `DependencyInjection.cs`.
-5. Controlador en `API/Controllers` que **hereda de `ApiControllerBase`**.
+> **Language convention:** code, comments, XML docs, logs and developer-facing exception messages are written in **English**.
+> Messages returned by the API to end users (e.g. `"Credenciales inválidas."`) and seed content (subject names, plan descriptions, emails) stay in **Spanish**, because the app is used by Colombian students.
 
 ---
 
-## 2. Herencia e interfaces usadas
+## 1. Project map
 
-| Tipo | Hereda de / implementa | Para qué |
+The solution uses a layered architecture. Each layer only knows the layers below it:
+
+```
+IcfesApp.API             → HTTP controllers. All inherit from ApiControllerBase.
+   │
+IcfesApp.Infrastructure  → Service implementations (EF Core, Identity, JWT, email).
+   │
+IcfesApp.Application     → Service interfaces (IXxxService), DTOs, Result and mappers (ToDto).
+   │
+IcfesApp.Domain          → Entities, enums, constants and QuestionBuilder. Depends on nothing.
+```
+
+**How to add a new feature:**
+
+1. Entity in `Domain/Entities` (if needed).
+2. DTOs in `Application/<Module>/Dtos` and their mapper in `Application/<Module>/<Module>Mappings.cs`.
+3. `IXxxService` interface in `Application/Common/Interfaces`, returning `Result` / `Result<T>`.
+4. `XxxService` implementation in `Infrastructure/Content` (or `Infrastructure/Security` for auth) and its registration in `DependencyInjection.cs`.
+5. Controller in `API/Controllers` that **inherits from `ApiControllerBase`**.
+
+---
+
+## 2. Inheritance, interfaces and patterns
+
+### 2.1 Class hierarchies
+
+```
+ControllerBase (ASP.NET)
+ └── ApiControllerBase                 CurrentUserId + Result → HTTP
+      ├── SignInControllerBase         Common sign-in response (tokens / 2FA required)
+      │    ├── AuthController          register, register-staff, login, google, session, refresh, revoke
+      │    └── TwoFactorController     2fa/setup, 2fa/enable, 2fa/disable, 2fa/verify
+      ├── PasswordController           forgot-password, reset-password, change-password
+      ├── EmailConfirmationController  confirm-email, resend-confirmation
+      └── QuestionsController, PracticeSessionsController, SubjectsController, InstitutionsController,
+          InvitationCodesController, PlansController, SubscriptionsController, ReportsController
+
+Result                                 Succeeded + Errors + ErrorType
+ ├── Result<T>                         + Value
+ └── AuthResult                        + tokens, user, 2FA
+
+AuthEmailMessage (abstract)            Template Method: BuildHtmlBody()
+ ├── EmailConfirmationMessage
+ └── PasswordResetMessage
+```
+
+### 2.2 Design patterns in use
+
+| Pattern | Where | Problem it solves |
 |---|---|---|
-| `ApiControllerBase` *(nuevo, abstracto)* | `ControllerBase` | Base de **todos** los controladores: `CurrentUserId` y traducción de `Result` → HTTP. |
-| `AuthController`, `QuestionsController`, … (9) | `ApiControllerBase` | Ya no repiten código de usuario actual ni de manejo de errores. |
-| `Result` | — | Resultado de una operación sin valor (éxito / errores / tipo de error). |
-| `Result<T>` | `Result` | Igual, pero con un valor de retorno. |
-| `AuthResult` | `Result` *(antes era una clase suelta)* | Agrega los datos de sesión (tokens, usuario, 2FA). |
-| `IXxxService` → `XxxService` | interfaz → implementación | Los controladores dependen de la interfaz, no de la clase concreta. |
-| `QuestionBuilder` *(nuevo)* | — (`sealed`) | Única forma de construir una `Question` válida. |
+| **Builder** | `Domain/Builders/QuestionBuilder.cs` | A question was assembled by hand in 3 places with different rules. |
+| **Factory** | `Infrastructure/Identity/ApplicationUserFactory.cs` | `new ApplicationUser { ... }` was repeated in 6 places. |
+| **Strategy** | `Infrastructure/Content/SubscriptionOwnership/` | `SubscriptionService` had `if Particular / if Institutional` in two methods. |
+| **Template Method** | `Infrastructure/Email/Messages/` | Both auth emails had the same HTML structure written twice. |
+| **Base class (inheritance)** | `ApiControllerBase`, `SignInControllerBase` | `CurrentUserId` and error handling were copied into every controller. |
+
+### 2.3 Main interfaces
+
+| Interface | Implementation | Responsibility |
+|---|---|---|
+| `IRegistrationService` | `RegistrationService` | Student sign-up and staff creation |
+| `ISessionService` | `SessionService` | Login, Google login, refresh, revoke, current user |
+| `IPasswordService` | `PasswordService` | Forgot / reset / change password |
+| `IEmailConfirmationService` | `EmailConfirmationService` | Confirm email, resend link |
+| `ITwoFactorService` | `TwoFactorService` | 2FA setup, enable, disable, verify login |
+| `IAuthTokenIssuer` *(infrastructure)* | `AuthTokenIssuer` | Issue and revoke session tokens |
+| `IAuthEmailSender` *(infrastructure)* | `AuthEmailSender` | Send auth emails, log failures |
+| `ISubscriptionOwnerStrategy` *(infrastructure)* | `Particular…` / `Institutional…` | Whose subscription covers a user |
+| `IQuestionService`, `IPracticeSessionService`, … | `QuestionService`, … | Content modules (unchanged contracts) |
 
 ---
 
-## 3. Registro de cambios
+## 3. Change log
 
-### Fase 1 — Errores y seguridad
+### Phase 1 — Bugs and security
 
-#### 1.1 Los estudiantes podían ver las respuestas correctas 🔒
-- **Antes:** `GET /api/questions` solo pedía estar logueado y `QuestionDto` incluye `IsCorrect`.
-- **Ahora:** todo `QuestionsController` exige la política `RequireTeacher` (Teacher o Admin).
-  El estudiante sigue recibiendo sus preguntas por `/api/practice-sessions`, que nunca revela la respuesta antes de tiempo.
-- **Archivo:** `API/Controllers/QuestionsController.cs`
-- **Impacto en el front:** ninguno; solo el panel de administración usa ese endpoint.
+#### 1.1 Students could see the correct answers 🔒
+- **Before:** `GET /api/questions` only required being logged in, and `QuestionDto` includes `IsCorrect`.
+- **Now:** the whole `QuestionsController` requires the `RequireTeacher` policy (Teacher or Admin).
+  Students keep getting their questions through `/api/practice-sessions`, which never reveals the answer ahead of time.
+- **Frontend impact:** none; only the admin panel uses that endpoint.
 
-#### 1.2 Crear o editar una pregunta borraba las imágenes 🐞
-- **Antes:** `ImageUrl`, `JustificationImageUrl` y la imagen de cada opción no se guardaban al crear/editar,
-  y al editar se perdían las imágenes de las opciones. `QuestionDto` tampoco las devolvía.
-- **Ahora:** las peticiones aceptan `imageUrl` (enunciado), `justificationImageUrl` y `options[].imageUrl`,
-  y `QuestionDto` / `QuestionOptionDto` las devuelven.
-- **Archivos:** `Application/Questions/Dtos/*`, `Infrastructure/Content/QuestionService.cs`
-- **Impacto en el front:** compatible. Para no perder imágenes al editar desde el panel, el front debe reenviar las `imageUrl` que recibió.
+#### 1.2 Creating or editing a question dropped the images 🐞
+- **Before:** `ImageUrl`, `JustificationImageUrl` and each option's image were not saved on create/update,
+  and updating deleted the option images. `QuestionDto` did not return them either.
+- **Now:** requests accept `imageUrl`, `justificationImageUrl` and `options[].imageUrl`, and the DTOs return them.
+- **Frontend impact:** compatible. To keep images when editing from the admin panel, the frontend must send back the `imageUrl` values it received.
 
-#### 1.3 El código HTTP del login dependía del texto del mensaje 🐞
-- **Antes:** `AuthController` buscaba palabras como *"confirmar tu correo"* o *"bloqueada"* dentro del mensaje para decidir entre 401/403/423.
-  Cambiar un texto rompía la API.
-- **Ahora:** `Result` tiene `ErrorType` (`Validation`, `NotFound`, `Unauthorized`, `Forbidden`, `Locked`).
-  El servicio indica el tipo y `ApiControllerBase.ToErrorResponse` decide el código.
+#### 1.3 Login HTTP status depended on the message text 🐞
+- **Before:** `AuthController` searched for words like *"confirmar tu correo"* or *"bloqueada"* inside the message to choose 401/403/423.
+- **Now:** `Result` has an `ErrorType` and `ApiControllerBase.ToErrorResponse` maps it:
 
   | ErrorType | HTTP |
   |---|---|
   | `Validation` | 400 |
   | `Unauthorized` | 401 |
-  | `Forbidden` | 403 (correo sin confirmar) |
+  | `Forbidden` | 403 (email not confirmed) |
   | `NotFound` | 404 |
-  | `Locked` | 423 (cuenta bloqueada) |
-- **Archivos:** `Application/Common/Models/ErrorType.cs`, `Result.cs`, `Infrastructure/Security/AuthService.cs`
+  | `Locked` | 423 (account locked) |
 
-#### 1.4 `register-staff` le entregaba al admin los tokens del usuario nuevo 🔒
-- **Antes:** el admin creaba un profesor y recibía el access/refresh token **del profesor**.
-- **Ahora:** devuelve solo los datos del usuario creado (`UserInfoDto`).
-- **Impacto en el front:** ninguno; el front no leía esa respuesta.
+#### 1.4 `register-staff` handed the new user's tokens to the admin 🔒
+- **Now:** it returns only the created user (`UserInfoDto`). The frontend did not read that response.
 
-#### 1.5 `/api/auth/session` devolvía datos incompletos 🐞
-- **Antes:** `firstName` y `lastName` vacíos y sin `schoolId` (se armaba solo con lo que trae el JWT).
-- **Ahora:** lee el usuario de la base de datos (`IAuthService.GetCurrentUserAsync`) y devuelve todo.
-- **Impacto en el front:** compatible (misma forma, ahora con datos).
+#### 1.5 `/api/auth/session` returned incomplete data 🐞
+- **Before:** empty `firstName` / `lastName` and no `schoolId` (built only from the JWT).
+- **Now:** it reads the user from the database.
 
-#### 1.6 Datos demo con contraseña conocida en todos los entornos 🔒
-- **Antes:** `DataSeeder` (usuarios `studentX@test.com` / `Test12345!`) se ejecutaba siempre.
-- **Ahora:** solo en `Development`. Roles y admin por defecto se siguen creando en todos los entornos.
-- **Archivo:** `API/Program.cs`
+#### 1.6 Demo data with a known password in every environment 🔒
+- **Now:** `DataSeeder` (users `studentX@test.com` / `Test12345!`) only runs in `Development`. Roles and the default admin are still created everywhere.
 
-#### 1.7 Cualquiera podía ver planes inactivos 🔒
-- **Antes:** `GET /api/plans?includeInactive=true` era público.
-- **Ahora:** `includeInactive` solo tiene efecto para un Admin; para los demás se ignora.
-- **Archivo:** `API/Controllers/PlansController.cs`
+#### 1.7 Anyone could see inactive plans 🔒
+- **Now:** `includeInactive` only takes effect for an Admin.
 
-#### 1.8 Sesión inexistente respondía 400 en vez de 404 🐞
-- `POST /api/practice-sessions/{id}/answers` y `/finish` ahora responden **404** si la sesión no existe o es de otro estudiante.
+#### 1.8 Missing practice session returned 400 instead of 404 🐞
+- `POST /api/practice-sessions/{id}/answers` and `/finish` now return **404**.
 
-#### 1.9 Reportes usaba roles escritos a mano
-- `[Authorize(Roles = "Teacher,Admin")]` → `[Authorize(Policy = Policies.RequireTeacher)]` (misma regla, definida en un solo lugar).
+#### 1.9 Reports used a hard-coded role string
+- `[Authorize(Roles = "Teacher,Admin")]` → `[Authorize(Policy = Policies.RequireTeacher)]`.
+
+#### 1.10 Malformed 2FA token caused a 500 error 🐞 *(found while testing phase 3)*
+- **Before:** `POST /api/auth/2fa/verify` with an invalid token (e.g. `"abc"`) crashed with a 500: `SecurityTokenMalformedException` derives from `ArgumentException`, not from the `SecurityTokenException` that was being caught.
+- **Now:** both exceptions are caught and the endpoint returns 401.
+- **File:** `Infrastructure/Security/JwtTokenService.cs`
 
 ---
 
-### Fase 2 — Patrones y código limpio
+### Phase 2 — Patterns and clean code
 
-#### 2.1 Patrón Builder para preguntas (`QuestionBuilder`)
-- **Problema:** una `Question` se armaba a mano en 3 lugares (crear, editar y seeder) y cada uno olvidaba algo
-  (así nació el error 1.2). Las reglas solo se validaban en el servicio; el seeder no las validaba.
-- **Solución:** `Domain/Builders/QuestionBuilder.cs`, la **única** forma de construir una pregunta.
-  Valida las reglas del negocio:
-  - enunciado y justificación obligatorios,
-  - al menos 2 opciones,
-  - exactamente 1 opción correcta,
-  - todas las opciones con texto.
+#### 2.1 Builder pattern for questions (`QuestionBuilder`)
+The **only** way to build a question. It validates the business rules: statement and justification required,
+at least 2 options, exactly 1 correct option, every option with text.
 
 ```csharp
 var questionBuilder = QuestionBuilder.ForSubject(subjectId)
-    .WithStatement("¿Cuánto es 2 + 2?", statementImageUrl: null)
+    .WithStatement("What is 2 + 2?", statementImageUrl: null)
     .WithJustification("2 + 2 = 4")
     .WithDifficulty(QuestionDifficulty.Easy)
     .CreatedBy(teacherUserId)
     .AddOption("4", isCorrect: true)
     .AddOption("5", isCorrect: false);
 
-var validationErrors = questionBuilder.Validate();   // lista vacía = válida
+var validationErrors = questionBuilder.Validate();   // empty list = valid
 if (validationErrors.Count == 0)
 {
-    Question question = questionBuilder.Build();     // lanza excepción si no es válida
+    Question question = questionBuilder.Build();     // throws if invalid
 }
 ```
 
-- **Quién lo usa:** `QuestionService.CreateAsync`, `QuestionService.UpdateAsync` (con `BuildOptionsFor`) y `DataSeeder`.
-  En el seeder, una pregunta mal escrita en el JSON se omite en vez de romper el arranque.
+Used by `QuestionService.CreateAsync`, `QuestionService.UpdateAsync` (through `BuildOptionsFor`) and `DataSeeder`
+(an invalid question in the JSON is skipped instead of breaking startup).
 
-#### 2.2 Clase base de controladores (`ApiControllerBase`) — herencia
-- **Problema:** `CurrentUserId` estaba copiado en 5 controladores (y en 2 más se calculaba en línea),
-  y `ToActionResult` estaba copiado en 4.
-- **Solución:** `API/Controllers/ApiControllerBase.cs` (abstracta):
-  - `CurrentUserId` → Id del usuario del JWT.
-  - `ToActionResult(Result)` → 204 si fue bien.
-  - `ToActionResult(Result<T>)` → 200 con el valor si fue bien.
-  - `ToErrorResponse(Result)` → código según `ErrorType`, con el cuerpo `{ "errors": [...] }`.
-- Los 9 controladores heredan de ella y quedaron más cortos.
+#### 2.2 Controller base class (`ApiControllerBase`)
+- `CurrentUserId`, `ToActionResult(Result)` (204), `ToActionResult(Result<T>)` (200 + value), `ToErrorResponse(Result)`.
+- It replaced code copied into 7 controllers.
 
-#### 2.3 Un solo tipo `Result` — herencia
-- **Antes:** había 4 tipos: `Result`, `Result<T>`, `OperationResult` y `AuthResult` (este último sin relación con los demás).
-- **Ahora:** `OperationResult` se eliminó (se usa `Result`) y `AuthResult` **hereda** de `Result`.
-  Todos tienen `Succeeded`, `Errors` y `ErrorType`.
+#### 2.3 A single `Result` type
+- `OperationResult` was removed and `AuthResult` now **inherits** from `Result`.
 
-#### 2.4 Mappers `ToDto()` — un solo lugar por DTO
-- **Problema:** `SchoolDto` se armaba 3 veces, `PlanDto` 2 veces, y la lógica de `IsUsable` (códigos)
-  e `IsCurrentlyActive` (suscripciones) se recalculaba en los servicios aunque ya existe en la entidad.
-- **Solución:** una clase estática de métodos de extensión por módulo:
+#### 2.4 `ToDto()` mappers — one place per DTO
+One static class of extension methods per module: `QuestionMappings`, `PracticeSessionMappings`, `SchoolMappings`,
+`SubjectMappings`, `PlanMappings`, `InvitationCodeMappings` (uses the entity's `IsUsable`) and
+`SubscriptionMappings` (uses the entity's `IsCurrentlyActive`).
 
-  | Archivo | Métodos |
-  |---|---|
-  | `Application/Questions/QuestionMappings.cs` | `Question.ToDto()`, `QuestionOption.ToDto()` |
-  | `Application/Practice/PracticeSessionMappings.cs` | `ToDto()`, `ToResultDto()`, `ToAnswerResultDto()` |
-  | `Application/Schools/SchoolMappings.cs` | `School.ToDto()` |
-  | `Application/Subjects/SubjectMappings.cs` | `Subject.ToDto()` |
-  | `Application/Plans/PlanMappings.cs` | `Plan.ToDto()` |
-  | `Application/InvitationCodes/InvitationCodeMappings.cs` | `InvitationCode.ToDto()` (usa `IsUsable` de la entidad) |
-  | `Application/Subscriptions/SubscriptionMappings.cs` | `Subscription.ToDto()` (usa `IsCurrentlyActive` de la entidad) |
+#### 2.5 Behaviour in the entities
+- `Question.CorrectOption` (it was `Options.First(o => o.IsCorrect)` repeated in 4 places).
+- `StudentAnswer.IsAnswered` and `StudentAnswer.RegisterSelectedOption(option)`.
 
-#### 2.5 Comportamiento en las entidades (dominio rico)
-- `Question.CorrectOption`: devuelve la opción correcta (antes `Options.First(o => o.IsCorrect)` repetido en 4 sitios).
-- `StudentAnswer.IsAnswered` y `StudentAnswer.RegisterSelectedOption(option)`: registrar una respuesta es ahora un solo método.
-- Se documentaron con `<summary>` las propiedades de `Question` y `StudentAnswer`.
+#### 2.6 Practice session performance
+- Starting a session used to load **every** question of the subject with its options. Now it loads only the ids, picks randomly and loads just the selected ones.
+- The owner filter is now part of the SQL query.
+- The question seeder used one query per question (~230); now it uses one.
+- Read-only queries use `AsNoTracking()`.
 
-#### 2.6 `AuthService` más legible
-- `CompleteSignInAsync`: paso final común del login normal y del login con Google (pedir 2FA o emitir tokens). Antes estaba duplicado.
-- `BuildUserInfo` y `DescribeErrors`: helpers que antes estaban repetidos.
-- Constante `RecoveryCodeCount` en vez del número `10` suelto.
-
-#### 2.7 Rendimiento en sesiones de práctica
-- **Iniciar sesión:** antes cargaba **todas** las preguntas de la materia con sus opciones para elegir unas pocas.
-  Ahora trae solo los Ids, elige al azar y carga únicamente las elegidas (`PickRandomQuestionsAsync`).
-- **Buscar la sesión del estudiante:** el filtro por dueño ahora va en la consulta SQL, no después de cargarla.
-- **Seeder de preguntas:** antes hacía una consulta por cada pregunta del JSON (~230). Ahora hace una sola.
-- Consultas de solo lectura con `AsNoTracking()`.
-
-#### 2.8 Nombres claros de variables
-Se eliminaron las variables de una letra y los nombres genéricos en los archivos tocados:
-
-| Antes | Ahora |
-|---|---|
-| `q`, `s`, `o`, `a`, `u`, `ic`, `ps`, `ur`, `rt` (lambdas) | `question`, `session`, `option`, `answer`, `user`, `invitationCode`, `practiceSession`, `userRole`, `refreshToken` |
-| `result` | `createUserResult`, `resetPasswordResult`, `changePasswordResult`, `confirmEmailResult`… |
-| `stored` | `storedRefreshToken` |
-| `key` | `authenticatorKey` |
-| `code` (era la entidad completa) | `invitationCode` · y `codeValue` para el texto |
-| `item`, `opt` | `questionSeed`, `optionSeed` |
-| `total`, `correct` | `totalQuestionCount`, `correctAnswerCount` |
-| `payload` | `googlePayload` |
-| `token` / `body` en correos | `passwordResetToken`, `emailConfirmationToken`, `emailHtmlBody` |
-| `ex` | `exception` |
-| `db` (Program.cs) | `dbContext` |
-| `i` / `var q = questions[i]` | `questionIndex` / `var question = questions[questionIndex]` |
-| `sanJoseSub`, `liceo` | `sanJoseSubscription`, `liceoModernoSchoolId` |
-| Números sueltos (`6`, `4`, `-1`, `10`) | Constantes: `RandomSuffixLength`, `groupLength`, `UnlimitedUses`, `RecoveryCodeCount` |
-
-También se borraron comentarios de ruido como `// <--- AGREGADO AQUÍ (ESTE ERA EL ERROR)` y `// Método corregido`.
+#### 2.7 Clear variable names
+One-letter lambdas (`q`, `s`, `o`, `a`, `u`, `ic`, `ps`, `ur`, `rt`) and generic names (`result`, `stored`, `key`, `item`, `opt`, `total`, `ex`, `db`…)
+were replaced with descriptive names (`question`, `createUserResult`, `storedRefreshToken`, `authenticatorKey`, `questionSeed`, `totalQuestionCount`, `exception`, `dbContext`…).
+Magic numbers became constants (`RandomSuffixLength`, `UnlimitedUses`, `RecoveryCodeCount`, `KeyGroupLength`).
+Noise comments like `// <--- AGREGADO AQUÍ (ESTE ERA EL ERROR)` were deleted.
 
 ---
 
-## 4. Cambios de comportamiento de la API (para el front)
+### Phase 3 — Splitting `AuthService`, Factory and Strategy
 
-| Endpoint | Cambio | ¿Rompe el front? |
+#### 3.1 `AuthService` (542 lines, 7 responsibilities) split into focused services
+| New service | Methods | Previously in |
 |---|---|---|
-| `GET/POST/PUT/DELETE /api/questions` | Solo Teacher/Admin (403 para estudiantes) | No (solo lo usa el panel admin) |
-| `GET/POST/PUT /api/questions` | Nuevos campos `imageUrl`, `justificationImageUrl`, `options[].imageUrl` | No |
-| `POST /api/auth/register-staff` | Devuelve `UserInfoDto` en vez de tokens | No (el front no lee la respuesta) |
-| `GET /api/auth/session` | Ahora trae `firstName`, `lastName`, `schoolId` | No |
-| `POST /api/practice-sessions/{id}/answers` y `/finish` | 404 si la sesión no existe (antes 400) | No |
-| `GET /api/plans?includeInactive=true` | Se ignora si no es Admin | No |
+| `RegistrationService` | `RegisterStudentAsync`, `RegisterStaffAsync` | `AuthService.RegisterAsync`, `RegisterStaffAsync` |
+| `SessionService` | `LoginAsync`, `LoginWithGoogleAsync`, `RefreshAsync`, `RevokeRefreshTokenAsync`, `GetCurrentUserAsync` | `AuthService` |
+| `PasswordService` | `SendPasswordResetEmailAsync`, `ResetPasswordAsync`, `ChangePasswordAsync` | `AuthService.ForgotPasswordAsync`, … |
+| `EmailConfirmationService` | `ConfirmEmailAsync`, `ResendConfirmationEmailAsync` | `AuthService` |
+| `TwoFactorService` | `GetSetupAsync`, `EnableAsync`, `DisableAsync`, `VerifyLoginAsync` | `AuthService.*TwoFactor*` |
+| `AuthTokenIssuer` | `CompleteSignInAsync`, `IssueTokensAsync`, `RevokeAllRefreshTokensAsync` | private helpers of `AuthService` |
+| `AuthEmailSender` | `SendEmailConfirmationAsync`, `SendPasswordResetAsync` | private helpers of `AuthService` |
 
-**Ningún endpoint cambió de nombre todavía** (eso es la fase 5).
+`IAuthService` was replaced by the five interfaces listed in section 2.3. Every class now has one reason to change.
+
+#### 3.2 `AuthController` split into 4 controllers — **routes unchanged**
+`AuthController`, `PasswordController`, `EmailConfirmationController` and `TwoFactorController` share the
+`api/auth` prefix, so every URL is exactly the same as before. `SignInControllerBase` holds the sign-in response
+shared by `AuthController` (login, google) and `TwoFactorController` (verify).
+
+#### 3.3 Factory pattern for users (`ApplicationUserFactory`)
+The only place that creates an `ApplicationUser`. Rules in one spot: `UserName` = email, the type is derived from the institution,
+and who has to confirm the email.
+
+| Method | Used by | Email confirmed? |
+|---|---|---|
+| `CreateSelfRegisteredStudent(email, first, last, institutionId?)` | `RegistrationService` | No |
+| `CreateStaff(email, first, last)` | `RegistrationService` | Yes |
+| `CreateFromGoogle(email, givenName?, familyName?)` | `SessionService` | Yes |
+| `CreatePreconfirmed(email, first, last, institutionId?)` | `RoleSeeder`, `DataSeeder` | Yes |
+
+#### 3.4 Strategy pattern for subscriptions (`ISubscriptionOwnerStrategy`)
+"Whose subscription covers this user?" is now decided by a strategy:
+
+| Strategy | Applies when | Filters by |
+|---|---|---|
+| `InstitutionalSubscriptionOwnerStrategy` | Institutional user **with** an institution | `InstitutionId` |
+| `ParticularSubscriptionOwnerStrategy` | Any other user | `UserId` |
+
+The conditions never overlap, so exactly one strategy applies to each user. `SubscriptionService.GetMineAsync` and
+`HasActiveAccessAsync` share it, with no `if` per user type. A new owner type = a new class registered in `DependencyInjection.cs`.
+
+> **Small behaviour change:** an *institutional* user **without** an institution assigned is now treated as particular
+> in `HasActiveAccessAsync` too (before, `GetMineAsync` did so but `HasActiveAccessAsync` returned `false`). Both methods are now consistent.
+
+#### 3.5 Template Method pattern for auth emails
+`AuthEmailMessage` (abstract) defines the structure in `BuildHtmlBody()`: greeting → explanation → action link → "if it wasn't you" notice.
+`EmailConfirmationMessage` and `PasswordResetMessage` only override the texts. Email content is identical to before.
+
+#### 3.6 Dependency injection grouped by area
+`DependencyInjection.cs` now has `AddAuthenticationServices` and `AddContentServices`.
+
+#### 3.7 Comments and developer texts translated to English
+295 comment lines in 82 files, plus logs, configuration exceptions and the Swagger description.
 
 ---
 
-## 5. Pruebas realizadas
+## 4. API behaviour changes (for the frontend)
 
-Compilación: **0 errores, 0 advertencias.**
-Prueba manual levantando la API compilada en un puerto aparte (`5299`) con una base de datos nueva:
-
-| # | Prueba | Resultado |
+| Endpoint | Change | Breaks the frontend? |
 |---|---|---|
-| 1 | Login con contraseña incorrecta | 401 ✅ |
-| 2 | `/api/auth/session` de un estudiante | Trae nombre, apellido y `schoolId` ✅ |
-| 3 | Estudiante consulta `/api/questions` | 403 ✅ |
-| 4 | Profesor consulta `/api/questions` | 234 preguntas, 70 con imagen, campos de imagen presentes ✅ |
-| 5 | Crear pregunta sin opción correcta | 400 con el mensaje del builder ✅ |
-| 6 | Crear pregunta con imágenes | Se guardan las del enunciado y la opción ✅ |
-| 7 | Editar pregunta (cambia correcta e imagen de opción) | 204 y datos correctos al leerla ✅ |
-| 8 | Borrar pregunta | 204 ✅ |
-| 9 | Iniciar sesión de práctica | 3 preguntas, sin exponer `isCorrect` ✅ |
-| 10 | Responder | Devuelve si fue correcta, opción correcta y justificación ✅ |
-| 11 | Responder en sesión finalizada | 400 "La sesión ya fue finalizada." ✅ |
-| 12 | Finalizar sesión inexistente | 404 ✅ |
-| 13 | Admin crea profesor (`register-staff`) | 200 con el usuario, sin tokens ✅ |
-| 14 | Planes inactivos como anónimo | Se ignora el filtro ✅ |
-| 15 | Reporte de profesor / suscripción actual | 200 ✅ |
+| `/api/questions` (all methods) | Teacher/Admin only (403 for students) | No (admin panel only) |
+| `GET/POST/PUT /api/questions` | New `imageUrl`, `justificationImageUrl`, `options[].imageUrl` fields | No |
+| `POST /api/auth/register-staff` | Returns `UserInfoDto` instead of tokens | No (response not read) |
+| `GET /api/auth/session` | Now includes `firstName`, `lastName`, `schoolId` | No |
+| `POST /api/practice-sessions/{id}/answers` and `/finish` | 404 when the session does not exist (was 400) | No |
+| `GET /api/plans?includeInactive=true` | Ignored unless Admin | No |
+| `POST /api/auth/2fa/verify` with malformed token | 401 (was 500) | No |
+
+**No endpoint has been renamed yet** (that is phase 5).
 
 ---
 
-## 6. Pendiente
+## 5. Testing
 
-| Fase | Contenido | Estado |
+Build: **0 errors, 0 warnings.**
+Manual tests against the compiled API on a separate port (`5299`) with its own database (the developer's running API and database were not touched).
+
+**Phases 1–2**
+
+| # | Test | Result |
 |---|---|---|
-| 3 | Dividir `AuthService` (registro, login, tokens, contraseña, 2FA, correo, Google) · `ApplicationUserFactory` · Strategy para suscripción Particular/Institucional | Pendiente |
-| 4 | **Proxy:** proxy de protección que exige suscripción activa para iniciar práctica · proxy de caché para materias y planes | Pendiente |
-| 5 | Renombrar endpoints a nombres claros y eliminar los duplicados (requiere cambiar también el front) | Pendiente |
-| 6 | Renombrar `School` → `Institution` (con migración) · dividir `DataSeeder` por entidad | Pendiente |
+| 1 | Login with wrong password | 401 ✅ |
+| 2 | `/api/auth/session` as a student | Returns name, last name and `schoolId` ✅ |
+| 3 | Student calls `/api/questions` | 403 ✅ |
+| 4 | Teacher calls `/api/questions` | 234 questions, 70 with images ✅ |
+| 5 | Create question with no correct option | 400 with the builder message ✅ |
+| 6–8 | Create (with images), update, delete question | Images saved; 204; 204 ✅ |
+| 9–12 | Start / answer / answer finished session / finish missing session | Correct; 400; 404 ✅ |
+| 13–15 | `register-staff`, inactive plans as anonymous, report, current subscription | ✅ |
 
-**Pendiente técnico:** `StudentAnswer.AnsweredAtUtc` recibe la fecha actual al crear la sesión, aunque la pregunta aún no se haya respondido.
-Para hacerla `nullable` hace falta una migración, y la herramienta `dotnet-ef` no está instalada en este equipo
-(`dotnet tool install --global dotnet-ef`).
+**Phase 3**
+
+| # | Test | Result |
+|---|---|---|
+| 1–3 | Login, wrong password, session | 200 / 401 / 200 ✅ |
+| 4–7 | Refresh, reuse old refresh token, revoke, refresh revoked | New token / 401 / 204 / 401 ✅ |
+| 8–9 | Sign-up with invitation code, login before confirming | 200 / 403 ✅ |
+| 10–11 | Duplicate sign-up, invalid invitation code | 400 / 400 ✅ |
+| 12–14 | Forgot password, resend confirmation, bad confirmation token | 200 / 200 / 400 ✅ |
+| 15–16 | Change password (wrong / right), login with the new password | 400 / 200 / 200 ✅ |
+| 17–19 | 2FA setup, enable with wrong code, verify with malformed token | 200 / 400 / 401 ✅ *(was 500, fixed — see 1.10)* |
+| 20 | Current subscription: institutional student, particular active, particular expired, teacher | INSTITUTIONAL / STANDARD / FREE (Expired) / INSTITUTIONAL ✅ |
+| 21–22 | `register-staff` valid / with role `Student` | 200 / 400 ✅ |
+
+> Emails are not actually delivered locally: Gmail rejects the SMTP credentials in `appsettings.json`
+> (`5.7.8 Username and Password not accepted`). The API handles it as designed: it logs the error and still answers 200.
+
+---
+
+## 6. Pending
+
+| Phase | Content | Status |
+|---|---|---|
+| 4 | **Proxy:** protection proxy that requires an active subscription to start practice · caching proxy for subjects and plans | Pending |
+| 5 | Rename endpoints to clear names and remove duplicates (requires frontend changes) | Pending |
+| 6 | Rename `School` → `Institution` (with migration) · split `DataSeeder` per entity | Pending |
+
+**Technical debt:** `StudentAnswer.AnsweredAtUtc` gets the current date when the session is created, even before the question is answered.
+Making it nullable needs a migration, and the `dotnet-ef` tool is not installed on this machine (`dotnet tool install --global dotnet-ef`).

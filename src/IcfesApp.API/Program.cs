@@ -7,13 +7,13 @@ using Microsoft.OpenApi;
 var builder = WebApplication.CreateBuilder(args);
 
 // ─────────────────────────────────────────────────────────────
-// 1. Servicios
+// 1. Services
 // ─────────────────────────────────────────────────────────────
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
 
-// OpenAPI + botón Authorize (Bearer JWT) aplicado a nivel de operación
+// OpenAPI + Authorize button (Bearer JWT) applied at operation level
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -25,7 +25,7 @@ builder.Services.AddOpenApi(options =>
             Type = SecuritySchemeType.Http,
             Scheme = "bearer",
             BearerFormat = "JWT",
-            Description = "Pega el JWT de /api/auth/login. No incluyas la palabra 'Bearer'."
+            Description = "Paste the JWT from /api/auth/login. Do not include the word 'Bearer'."
         };
         return Task.CompletedTask;
     });
@@ -58,16 +58,16 @@ if (builder.Environment.IsDevelopment())
 var app = builder.Build();
 
 // ─────────────────────────────────────────────────────────────
-// 2. Pipeline HTTP (EL ORDEN AQUÍ ES CRÍTICO)
+// 2. HTTP pipeline (THE ORDER HERE MATTERS)
 // ─────────────────────────────────────────────────────────────
 
-// 1. CORS PRIMERO (Para que las imágenes y la API tengan los headers)
+// 1. CORS FIRST (so images and the API get the headers)
 if (app.Environment.IsDevelopment())
 {
     app.UseCors(LocalDevCorsPolicy);
 }
 
-// 2. Archivos estáticos después
+// 2. Static files afterwards
 app.UseStaticFiles();
 
 if (app.Environment.IsDevelopment())
@@ -88,9 +88,9 @@ app.UseAuthorization();
 app.MapControllers();
 
 // ─────────────────────────────────────────────────────────────
-// 3. Migraciones y datos iniciales
-//    - Roles y admin por defecto: en todos los entornos (la app no funciona sin ellos).
-//    - Datos demo (usuarios con contraseña conocida): SOLO en Development.
+// 3. Migrations and initial data
+//    - Roles and default admin: in every environment (the app does not work without them).
+//    - Demo data (users with a known password): Development ONLY.
 // ─────────────────────────────────────────────────────────────
 
 using (var scope = app.Services.CreateScope())

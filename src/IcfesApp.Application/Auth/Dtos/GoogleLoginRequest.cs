@@ -4,7 +4,7 @@ namespace IcfesApp.Application.Auth.Dtos;
 
 public class GoogleLoginRequest
 {
-    /// <summary>El ID token que devuelve Google Identity Services en el front, no un access token.</summary>
+    /// <summary>The ID token returned by Google Identity Services on the frontend, not an access token.</summary>
     [Required]
     public required string IdToken { get; set; }
 }

@@ -7,7 +7,7 @@ public class PlanDto
     public required string Name { get; set; }
     public string? Description { get; set; }
 
-    /// <summary>"Particular" o "Institutional"</summary>
+    /// <summary>"Particular" or "Institutional"</summary>
     public required string Target { get; set; }
 
     public int DurationDays { get; set; }

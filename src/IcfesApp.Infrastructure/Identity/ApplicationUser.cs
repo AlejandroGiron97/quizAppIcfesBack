@@ -10,8 +10,8 @@ public class ApplicationUser : IdentityUser<Guid>
     public string LastName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Modelo de acceso del usuario. Por defecto Particular; se cambia a Institutional
-    /// cuando el usuario se registra o aplica un código de invitación válido.
+    /// User access model. Particular by default; it changes to Institutional
+    /// when the user registers with or applies a valid invitation code.
     /// </summary>
     public UserType Type { get; set; } = UserType.Particular;
 
