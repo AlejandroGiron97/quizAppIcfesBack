@@ -5,7 +5,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<!-- Necesaria para AddIdentityApiEndpoints y demás APIs de Identity que viven en el framework compartido de ASP.NET Core -->
+		<!-- Needed for Identity and the other APIs that live in the ASP.NET Core shared framework (also provides IMemoryCache) -->
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>
 

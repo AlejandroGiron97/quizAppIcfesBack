@@ -28,7 +28,7 @@
 		<Content Update="preguntas_icfes.json">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
-		<!-- Usamos Update para modificar los archivos que el SDK ya incluyó por defecto -->
+		<!-- Update (not Include) changes files the SDK already includes by default -->
 		<Content Update="wwwroot\**\*">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>

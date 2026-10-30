@@ -4,7 +4,7 @@
 |---|---|
 | **Branch** | `refactor` (created from `App_test`, commit `663dfaf`) |
 | **Last update** | 2026-10-30 |
-| **Status** | Phases 1, 2 and 3 done · Phases 4 to 6 pending |
+| **Status** | Phases 1 to 4 done · Phases 5 and 6 pending |
 
 This document records **every change** made during the refactoring: what changed, why, and how to use it.
 It is meant for a developer joining the project, so they can understand the structure without reading all the code.
@@ -62,6 +62,14 @@ AuthEmailMessage (abstract)            Template Method: BuildHtmlBody()
  └── PasswordResetMessage
 ```
 
+### 2.1.1 Proxies (same interface, wrapping the real service)
+
+```
+Controller ──► ISubjectService         = CachedSubjectService                    ──► SubjectService
+Controller ──► IPlanService            = CachedPlanService                       ──► PlanService
+Controller ──► IPracticeSessionService = SubscriptionCheckingPracticeSessionService ──► PracticeSessionService
+```
+
 ### 2.2 Design patterns in use
 
 | Pattern | Where | Problem it solves |
@@ -70,6 +78,8 @@ AuthEmailMessage (abstract)            Template Method: BuildHtmlBody()
 | **Factory** | `Infrastructure/Identity/ApplicationUserFactory.cs` | `new ApplicationUser { ... }` was repeated in 6 places. |
 | **Strategy** | `Infrastructure/Content/SubscriptionOwnership/` | `SubscriptionService` had `if Particular / if Institutional` in two methods. |
 | **Template Method** | `Infrastructure/Email/Messages/` | Both auth emails had the same HTML structure written twice. |
+| **Proxy (protection)** | `Infrastructure/Content/Proxies/SubscriptionCheckingPracticeSessionService.cs` | `HasActiveAccessAsync` existed but nothing enforced subscriptions. |
+| **Proxy (caching)** | `Infrastructure/Content/Proxies/CachedSubjectService.cs`, `CachedPlanService.cs` | Subjects and plans were queried on every request although they rarely change. |
 | **Base class (inheritance)** | `ApiControllerBase`, `SignInControllerBase` | `CurrentUserId` and error handling were copied into every controller. |
 
 ### 2.3 Main interfaces
@@ -250,7 +260,55 @@ The conditions never overlap, so exactly one strategy applies to each user. `Sub
 `DependencyInjection.cs` now has `AddAuthenticationServices` and `AddContentServices`.
 
 #### 3.7 Comments and developer texts translated to English
-295 comment lines in 82 files, plus logs, configuration exceptions and the Swagger description.
+295 comment lines in 82 files, plus logs, configuration exceptions, the Swagger description and `.csproj` comments.
+
+---
+
+### Phase 4 — Proxy pattern
+
+A proxy implements **the same interface** as the real service and wraps it. Controllers keep asking for the
+interface and never know the proxy is there. Proxies are wired in `DependencyInjection.cs` with a small generic helper:
+
+```csharp
+// Whoever asks for ISubjectService gets CachedSubjectService, which wraps the real SubjectService.
+AddWithProxy<ISubjectService, SubjectService, CachedSubjectService>(services);
+AddWithProxy<IPlanService, PlanService, CachedPlanService>(services);
+AddWithProxy<IPracticeSessionService, PracticeSessionService, SubscriptionCheckingPracticeSessionService>(services);
+```
+
+To add a proxy to another service: create a class that implements the interface, receives the real service in its
+constructor, and register it with `AddWithProxy`.
+
+#### 4.1 Protection proxy — subscription required to practice
+- **Class:** `SubscriptionCheckingPracticeSessionService`.
+- **What it does:** before `StartAsync` it calls `ISubscriptionService.HasActiveAccessAsync` (which uses the phase 3 Strategy).
+  Without an active subscription it returns **403** `"Necesitas una suscripción activa para iniciar una práctica."`.
+- **What it does not block:** answering, finishing and viewing history, so a student whose subscription expires can still finish a session in progress.
+  Teachers and admins are never blocked.
+- **On/off switch** in `appsettings.json` (read live through `IOptionsMonitor`, no restart needed):
+
+  ```json
+  "PracticeAccess": {
+    "RequireActiveSubscription": false
+  }
+  ```
+
+  > ⚠️ **It is OFF by default on purpose.** The API has no way to create subscriptions yet (no payment flow, no automatic free trial),
+  > so turning it on would lock out every new particular user. Turn it on once that flow exists.
+- **Why a proxy:** `PracticeSessionService` knows nothing about subscriptions; the business rule lives in one place and can be switched off.
+
+#### 4.2 Caching proxy — subjects
+- **Class:** `CachedSubjectService` (uses `IMemoryCache`, already included in the ASP.NET Core shared framework — nothing to install).
+- `GetAllAsync` is cached for 30 minutes; `GetByIdAsync` is served from that same cached list.
+- `CreateAsync`, `UpdateAsync` and `DeleteAsync` **clear the cache**, so the next read is always fresh.
+
+#### 4.3 Caching proxy — plans
+- **Class:** `CachedPlanService`.
+- One cache entry per filter combination (e.g. `plans:particular:active`), 10 minutes.
+- There is no endpoint that edits plans (they are changed directly in the database), so entries just expire:
+  a plan changed in the database shows up at most 10 minutes later.
+
+> The cache lives in the memory of each API instance. If the API ever runs on several servers, switch to a distributed cache (e.g. Redis) behind the same proxies.
 
 ---
 
@@ -265,6 +323,8 @@ The conditions never overlap, so exactly one strategy applies to each user. `Sub
 | `POST /api/practice-sessions/{id}/answers` and `/finish` | 404 when the session does not exist (was 400) | No |
 | `GET /api/plans?includeInactive=true` | Ignored unless Admin | No |
 | `POST /api/auth/2fa/verify` with malformed token | 401 (was 500) | No |
+| `POST /api/practice-sessions` | 403 without an active subscription **only if** `PracticeAccess:RequireActiveSubscription` is `true` (default `false`) | No (off by default) |
+| `GET /api/subjects`, `GET /api/plans` | Served from cache (same response) | No |
 
 **No endpoint has been renamed yet** (that is phase 5).
 
@@ -302,6 +362,21 @@ Manual tests against the compiled API on a separate port (`5299`) with its own d
 | 20 | Current subscription: institutional student, particular active, particular expired, teacher | INSTITUTIONAL / STANDARD / FREE (Expired) / INSTITUTIONAL ✅ |
 | 21–22 | `register-staff` valid / with role `Student` | 200 / 400 ✅ |
 
+**Phase 4**
+
+| # | Test | Result |
+|---|---|---|
+| 1 | Gate **on** — institutional student with active subscription starts practice | 201 ✅ |
+| 2 | Gate **on** — particular student with active subscription | 201 ✅ |
+| 3 | Gate **on** — particular student with expired subscription | 403 with the message ✅ |
+| 4 | Gate **on** — teacher / admin without subscription | 201 / 201 ✅ |
+| 5 | Gate **on** — expired student views their history | 200 ✅ |
+| 6 | Gate **off** (default) — expired student starts practice | 201 ✅ |
+| 7 | 5 × `GET /api/subjects` + `GET /api/subjects/{id}` after the first load | 0 SQL queries ✅ |
+| 8 | Create / update / delete subject, then read | New data visible immediately, deleted → 404 ✅ |
+| 9 | 3 × `GET /api/plans?target=Particular` | 1 SQL query ✅ |
+| 10 | Plans by filter and by id | 3 particular / 4 total / by id ✅ |
+
 > Emails are not actually delivered locally: Gmail rejects the SMTP credentials in `appsettings.json`
 > (`5.7.8 Username and Password not accepted`). The API handles it as designed: it logs the error and still answers 200.
 
@@ -311,7 +386,6 @@ Manual tests against the compiled API on a separate port (`5299`) with its own d
 
 | Phase | Content | Status |
 |---|---|---|
-| 4 | **Proxy:** protection proxy that requires an active subscription to start practice · caching proxy for subjects and plans | Pending |
 | 5 | Rename endpoints to clear names and remove duplicates (requires frontend changes) | Pending |
 | 6 | Rename `School` → `Institution` (with migration) · split `DataSeeder` per entity | Pending |
 

@@ -2,6 +2,7 @@ using System.Text;
 using IcfesApp.Application.Common.Interfaces;
 using IcfesApp.Domain.Constants;
 using IcfesApp.Infrastructure.Content;
+using IcfesApp.Infrastructure.Content.Proxies;
 using IcfesApp.Infrastructure.Content.SubscriptionOwnership;
 using IcfesApp.Infrastructure.Email;
 using IcfesApp.Infrastructure.Identity;
@@ -65,6 +66,7 @@ public static class DependencyInjection
         services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
         services.Configure<EmailSettings>(configuration.GetSection("Email"));
         services.Configure<GoogleSettings>(configuration.GetSection("Authentication:Google"));
+        services.Configure<PracticeAccessSettings>(configuration.GetSection(PracticeAccessSettings.SectionName));
 
         services.AddAuthentication(options =>
         {
@@ -117,17 +119,37 @@ public static class DependencyInjection
     /// <summary>Subjects, questions, institutions, invitation codes, plans, subscriptions, reports and practice.</summary>
     private static void AddContentServices(IServiceCollection services)
     {
-        services.AddScoped<ISubjectService, SubjectService>();
+        services.AddMemoryCache();
+
         services.AddScoped<IQuestionService, QuestionService>();
         services.AddScoped<ISchoolService, SchoolService>();
         services.AddScoped<IInvitationCodeService, InvitationCodeService>();
-        services.AddScoped<IPlanService, PlanService>();
         services.AddScoped<IReportService, ReportService>();
-        services.AddScoped<IPracticeSessionService, PracticeSessionService>();
 
         // "Whose subscription is it" strategies: SubscriptionService receives all of them and picks the one that applies.
         services.AddSingleton<ISubscriptionOwnerStrategy, ParticularSubscriptionOwnerStrategy>();
         services.AddSingleton<ISubscriptionOwnerStrategy, InstitutionalSubscriptionOwnerStrategy>();
         services.AddScoped<ISubscriptionService, SubscriptionService>();
+
+        // Proxies: whoever asks for the interface gets the proxy, and the proxy wraps the real service.
+        AddWithProxy<ISubjectService, SubjectService, CachedSubjectService>(services);
+        AddWithProxy<IPlanService, PlanService, CachedPlanService>(services);
+        AddWithProxy<IPracticeSessionService, PracticeSessionService, SubscriptionCheckingPracticeSessionService>(services);
+    }
+
+    /// <summary>
+    /// Registers <typeparamref name="TProxy"/> as the implementation of <typeparamref name="TService"/>,
+    /// passing it the real <typeparamref name="TRealService"/> as the service it wraps.
+    /// The proxy's constructor must take a <typeparamref name="TService"/> parameter (the real service);
+    /// its other dependencies are resolved from the container as usual.
+    /// </summary>
+    private static void AddWithProxy<TService, TRealService, TProxy>(IServiceCollection services)
+        where TService : class
+        where TRealService : class, TService
+        where TProxy : class, TService
+    {
+        services.AddScoped<TRealService>();
+        services.AddScoped<TService>(serviceProvider =>
+            ActivatorUtilities.CreateInstance<TProxy>(serviceProvider, serviceProvider.GetRequiredService<TRealService>()));
     }
 }
