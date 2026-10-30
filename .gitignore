@@ -44,3 +44,13 @@ artifacts/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local SQLite database (each developer has their own; the API creates and seeds it on startup)
+*.db
+*.db-shm
+*.db-wal
+
+# Local notes / screenshots that may contain credentials
+docs/*.png
+docs/*.jpg
+docs/*.jpeg

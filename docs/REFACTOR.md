@@ -431,12 +431,35 @@ DemoSeeder (abstract)              SeedAsync() = if (!IsAlreadySeededAsync()) In
 #### 6.4 Nullable `StudentAnswer.AnsweredAtUtc`
 `null` = not answered yet (it used to be `DateTime.UtcNow` from the moment the session was created). Resolves the technical debt listed in previous versions.
 
-#### 6.5 Security notes (not changed — decisions for the team) ⚠️
-- `src/IcfesApp.API/appsettings.Development.json` **is tracked by git** and contains an email username/password and the JWT secret
-  (since commit `4b668b2` and earlier). Gmail rejects that password, so it is probably old, but it stays in the git history.
-  Recommended: move those values to `dotnet user-secrets` (the project already has a `UserSecretsId`), replace them with placeholders in the file
-  and rotate the JWT secret.
-- Images with SMTP setup notes were added to `docs/` locally; one contains a real app password. They are **not committed** — keep them out of the repo.
+#### 6.5 No more secrets or databases in git 🔒
+- **SQLite database out of git.** `icfesapp.db`, `icfesapp.db-shm` and `icfesapp.db-wal` were tracked since commits `4b668b2` / `663dfaf`
+  (they always showed as modified while the API ran, and a careless commit would overwrite everyone's data with yours).
+  They were removed from git with `git rm --cached` (local files are kept) and added to `.gitignore`.
+  > ⚠️ When teammates pull this commit, git **deletes their local `icfesapp.db`**. Back it up first if it has data you need;
+  > otherwise the API creates a new one with the demo data on the next start in Development.
+- **Credentials out of `appsettings.Development.json`.** The real email username/password were replaced with placeholders and the
+  JWT secret (public in the git history) with a clearly marked development-only placeholder, so the API still starts for everyone without setup.
+  The old values remain in the git history: treat them as compromised (Gmail already rejects that password).
+- `docs/*.png|jpg|jpeg` are ignored: local screenshots with credentials must never be committed.
+
+**Local setup for each developer** — real values go in `dotnet user-secrets` (stored in your Windows profile, never in the repo;
+the project already has a `UserSecretsId`). In Development they override `appsettings.Development.json`:
+
+```powershell
+# Email (needed for password recovery and email confirmation). Use a Gmail App Password, not your normal password:
+# Google account → 2-Step Verification ON → https://myaccount.google.com/apppasswords
+dotnet user-secrets set "Email:Username"  "your_email@gmail.com"      --project src\IcfesApp.API
+dotnet user-secrets set "Email:Password"  "your-16-letter-app-password" --project src\IcfesApp.API
+dotnet user-secrets set "Email:FromEmail" "your_email@gmail.com"      --project src\IcfesApp.API
+dotnet user-secrets set "Email:FromName"  "IcfesApp"                  --project src\IcfesApp.API
+
+# Optional: your own JWT secret instead of the development placeholder (at least 32 characters)
+dotnet user-secrets set "Jwt:Secret" "<long random string>" --project src\IcfesApp.API
+
+dotnet user-secrets list --project src\IcfesApp.API   # check what is configured
+```
+
+> Changing the JWT secret invalidates the tokens already issued: users just sign in again.
 
 ---
 
@@ -533,9 +556,9 @@ Manual tests against the compiled API on a separate port (`5299`) with its own d
 | Real frontend repositories against the backend (fresh DB and migrated real DB) | 2 / 2 and 2 / 2 ✅ |
 | Frontend `flutter analyze` / `flutter test` | No issues / 28 / 28 ✅ |
 
-> Emails are not actually delivered locally: Gmail rejects the SMTP credentials in `appsettings.Development.json`
+> Emails were not delivered locally during phases 1–6: Gmail rejected the old SMTP credentials in `appsettings.Development.json`
 > (`5.7.8 Username and Password not accepted`). The API handles it as designed: it logs the error and still answers 200.
-> To make them work, store a Gmail app password with `dotnet user-secrets` (see 6.5).
+> They work now with a Gmail app password stored in `dotnet user-secrets` (see 6.5) — verified with a real confirmation email.
 
 ---
 
@@ -544,5 +567,5 @@ Manual tests against the compiled API on a separate port (`5299`) with its own d
 All six phases are done. Ideas for the future:
 
 - Turn on `PracticeAccess:RequireActiveSubscription` once a payment / free-trial flow creates subscriptions.
-- Move the secrets out of `appsettings.Development.json` (see 6.5).
+- Each developer: configure `dotnet user-secrets` (see 6.5). Consider a private `Jwt:Secret` per environment.
 - Use the existing 2FA and Google sign-in endpoints from the frontend.
